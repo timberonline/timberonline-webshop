@@ -3,7 +3,9 @@ import { headers } from "next/headers";
 import { getCtx } from "@/server/services/runtime";
 import {
   contactInputFromFormData,
+  createSharedRateLimiter,
   EMPTY_CONTACT_VALUES,
+  type RateLimiter,
   submitContact,
   type ContactErrors,
   type ContactValues,
@@ -20,16 +22,25 @@ export type ContactFormState = {
   seq: number;
 };
 
+// Eén limiter per serverinstantie (de terugvallimiet in het geheugen moet tussen verzoeken blijven bestaan)
+let limiter: RateLimiter | undefined;
+function sharedLimiter(db: Parameters<typeof createSharedRateLimiter>[0]) {
+  limiter ??= createSharedRateLimiter(db, { limit: 5, windowSeconds: 15 * 60, scope: "contact" });
+  return limiter;
+}
+
 async function clientKey() {
   const h = await headers();
-  return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip")?.trim() || "onbekend";
+  // Vercel zet x-real-ip / x-forwarded-for zelf (overschrijft wat de bezoeker meestuurt)
+  return h.get("x-real-ip")?.trim() || h.get("x-forwarded-for")?.split(",")[0]?.trim() || "onbekend";
 }
 
 export async function contactAction(prev: ContactFormState, formData: FormData): Promise<ContactFormState> {
   const input = contactInputFromFormData(formData);
   const values: ContactValues = { name: input.name, email: input.email, order: input.order, subject: input.subject, message: input.message };
   const seq = (prev?.seq ?? 0) + 1;
-  const result = await submitContact(input, { mail: getCtx().mail, clientKey: await clientKey() });
+  const ctx = getCtx();
+  const result = await submitContact(input, { mail: ctx.mail, clientKey: await clientKey(), limiter: sharedLimiter(ctx.db) });
   switch (result.status) {
     case "invalid":
       return { status: "invalid", errors: result.errors, values, seq };

@@ -73,13 +73,17 @@ async function markPaid(ctx: Ctx, session: SessionLike) {
 
 /** Eén terugbetaling vanuit Stripe verwerken (eigen refund afronden of externe refund vastleggen). Idempotent. */
 async function refundUpdate(ctx: Ctx, r: Stripe.Refund, paymentIntentId: string | null) {
-  await ctx.db.rpc("api_refund_provider_update", {
+  const res = await ctx.db.rpc<{ ok: boolean; error?: string }>("api_refund_provider_update", {
     provider_refund_id: r.id,
+    // eigen refunds dragen hun id mee: een webhook die vóór het Stripe-antwoord komt, koppelt dan aan de juiste rij
+    metadata_refund_id: r.metadata?.refund_id ?? null,
     payment_intent_id: paymentIntentId,
     amount_cents: r.amount,
     status: r.status,
     error: r.failure_reason ?? null,
   });
+  // niet stil negeren: het event wordt als mislukt gemarkeerd en Stripe probeert het later opnieuw
+  if (!res.ok) throw new Error(`Terugbetaling ${r.id} niet verwerkt: ${res.error ?? "onbekend"}`);
 }
 
 async function dispatch(ctx: Ctx, event: Stripe.Event): Promise<{ handled: boolean; detail?: string }> {

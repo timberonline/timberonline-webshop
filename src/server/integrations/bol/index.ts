@@ -2,7 +2,7 @@ import type { Db } from "../../db/types";
 
 export type BolOfferRef = { offerId: string | null; reference: string | null; ean: string | null };
 export type BolPushResult = { status: "done" } | { status: "submitted"; processId: string };
-export type BolProcessResult = { status: "done" } | { status: "pending" } | { status: "failed"; error: string };
+export type BolProcessResult = { status: "done" } | { status: "pending" } | { status: "failed"; error: string; permanent?: boolean };
 
 export type BolOrder = {
   bol_order_id: string;
@@ -166,7 +166,8 @@ export function createLiveBol(opts: { clientId: string; clientSecret: string; fe
       const json = (await call("GET", `/shared/process-status/${encodeURIComponent(processId)}`)) as { status: string; errorMessage?: string };
       if (json.status === "SUCCESS") return { status: "done" };
       if (json.status === "PENDING") return { status: "pending" };
-      return { status: "failed", error: json.errorMessage ?? json.status };
+      // FAILURE = door bol afgewezen (bv. validatie): niet blind herhalen. TIMEOUT e.d. zijn herstelbaar.
+      return { status: "failed", error: json.errorMessage ?? json.status, permanent: json.status === "FAILURE" };
     },
     async confirmShipment(input) {
       return submitted(

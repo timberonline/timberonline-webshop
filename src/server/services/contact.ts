@@ -98,7 +98,7 @@ export function publicContactEmail(source: Record<string, string | undefined> = 
 }
 
 /** Eenvoudige rate limit per sleutel (IP) in het geheugen van deze serverinstantie. */
-export type RateLimiter = { take(key: string, now?: number): boolean };
+export type RateLimiter = { take(key: string, now?: number): boolean | Promise<boolean> };
 
 export function createRateLimiter({ limit, windowMs, maxKeys = 5000 }: { limit: number; windowMs: number; maxKeys?: number }): RateLimiter {
   const hits = new Map<string, number[]>();
@@ -118,6 +118,28 @@ export function createRateLimiter({ limit, windowMs, maxKeys = 5000 }: { limit: 
         if (oldest !== undefined) hits.delete(oldest);
       }
       return true;
+    },
+  };
+}
+
+/**
+ * Gedeelde limiet over alle serverinstanties heen (database, vast venster). De sleutel wordt gehasht opgeslagen,
+ * nooit het IP-adres zelf. Valt bij een databasefout terug op de limiet van deze instantie.
+ */
+export function createSharedRateLimiter(
+  db: { rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> },
+  { limit, windowSeconds, scope }: { limit: number; windowSeconds: number; scope: string },
+  fallback: RateLimiter = createRateLimiter({ limit, windowMs: windowSeconds * 1000 }),
+): RateLimiter {
+  return {
+    async take(key, now) {
+      const hashed = `${scope}:${createHash("sha256").update(`${scope}|${key}`).digest("hex").slice(0, 40)}`;
+      try {
+        const r = await db.rpc<{ allowed: boolean }>("api_rate_limit_take", { key: hashed, limit, window_seconds: windowSeconds });
+        return r.allowed;
+      } catch {
+        return fallback.take(key, now);
+      }
     },
   };
 }
@@ -180,7 +202,7 @@ export async function submitContact(input: ContactInput, deps: ContactDeps): Pro
   if (!v.ok) return { status: "invalid", errors: v.errors };
   const recipient = deps.recipient === undefined ? contactRecipient() : deps.recipient;
   if (!recipient) return { status: "inactive" };
-  if (!(deps.limiter ?? defaultLimiter).take(deps.clientKey, deps.now)) return { status: "rate_limited" };
+  if (!(await (deps.limiter ?? defaultLimiter).take(deps.clientKey, deps.now))) return { status: "rate_limited" };
   const msg = renderContactEmail(v.data);
   // Dezelfde inhoud twee keer verzenden (dubbelklik, herhaalpoging) levert bij Resend één bericht op.
   const idempotencyKey = `contact:${createHash("sha256").update(JSON.stringify(v.data)).digest("hex").slice(0, 40)}`;

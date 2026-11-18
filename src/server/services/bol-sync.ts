@@ -36,7 +36,7 @@ export async function processBolQueue(ctx: Ctx, opts: { limit?: number } = {}) {
             ? { result: "done" }
             : r.status === "pending"
               ? { result: "submitted", process_id: it.process_id }
-              : { result: "error", error: r.error }; // definitief afgewezen → opnieuw indienen met nieuwste stand
+              : { result: "error", error: r.error, permanent: r.permanent === true }; // afgewezen: alleen herstelbare fouten opnieuw
       } catch (e) {
         payload = { result: "check_error", error: (e as Error).message }; // tijdelijk: proces-ID bewaren
       }
