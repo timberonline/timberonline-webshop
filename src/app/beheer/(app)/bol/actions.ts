@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireAdmin, ROLES } from "@/server/auth/admin";
 import { getCtx } from "@/server/services/runtime";
-import { importBolOrder, processBolQueue, processOutbox, reconcileSimulatedBol } from "@/server/services/bol-sync";
+import { importBolOrder, processBolQueue, processOutbox, reconcileBol } from "@/server/services/bol-sync";
 import { back, errText, str } from "../_lib";
 
 export async function syncNowAction() {
@@ -57,7 +57,7 @@ export async function reconcileAction() {
   let msg: { ok?: string; fout?: string };
   try {
     await requireAdmin(ROLES.catalog);
-    const r = await reconcileSimulatedBol(getCtx());
+    const r = await reconcileBol(getCtx());
     msg = { ok: `Vergelijking klaar: ${r.differences} verschil(len) opnieuw in de wachtrij` };
   } catch (e) {
     msg = { fout: errText(e) };

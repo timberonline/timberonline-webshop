@@ -1,7 +1,9 @@
 "use server";
+import { after } from "next/server";
 import { z } from "zod";
 import { getCtx } from "@/server/services/runtime";
 import { cancelCheckout, startCheckout } from "@/server/services/checkout";
+import { processBolQueue } from "@/server/services/bol-sync";
 import type { Quote } from "@/server/services/types";
 import { productImageUrl } from "@/server/storage";
 
@@ -24,6 +26,8 @@ export async function checkoutAction(lines: unknown, shippingOption: unknown) {
   const o = Option.safeParse(shippingOption);
   if (!l.success || !o.success) return { ok: false as const, message: "Je winkelwagen is ongeldig. Ververs de pagina." };
   const res = await startCheckout(getCtx(), { lines: l.data, shipping_option: o.data });
+  // Reservering verlaagt direct het bol-aanbod; na het antwoord doorzetten om de klant niet te laten wachten.
+  after(() => processBolQueue(getCtx()).catch(() => undefined));
   if (!res.ok) return { ok: false as const, message: res.message };
   return { ok: true as const, url: res.url };
 }
@@ -31,5 +35,6 @@ export async function checkoutAction(lines: unknown, shippingOption: unknown) {
 export async function cancelAction(orderId: unknown) {
   const id = z.uuid().safeParse(orderId);
   if (id.success) await cancelCheckout(getCtx(), id.data);
+  after(() => processBolQueue(getCtx()).catch(() => undefined));
   return { ok: true };
 }

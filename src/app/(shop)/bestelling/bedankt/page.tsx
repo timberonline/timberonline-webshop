@@ -39,7 +39,7 @@ export default async function ThanksPage({ searchParams }: PageProps<"/bestellin
   const paid = order.payment_status === "paid";
   return (
     <div className="container" style={{ margin: "32px auto", maxWidth: 720 }}>
-      {paid ? <ClearCart /> : null}
+      <ClearCart />
       <div className="card stack">
         <h1>{paid ? "Bedankt voor je bestelling" : "We verwerken je betaling"}</h1>
         <p>

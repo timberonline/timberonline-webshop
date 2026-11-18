@@ -42,28 +42,33 @@ export async function processBolQueue(ctx: Ctx, opts: { limit?: number } = {}) {
   return results;
 }
 
-/** Geeft verzendbevestigingen van bol-orders door (één keer per order, met herpogingen). */
+/** Geeft verzendbevestigingen van bol-orders door (één keer per order, met herpogingen en processtatuscontrole). */
 export async function processOutbox(ctx: Ctx) {
-  const { items } = await ctx.db.rpc<{ items: { id: string; kind: string; token: string; payload: { order_id: string } }[] }>(
+  const { items } = await ctx.db.rpc<{ items: { id: string; kind: string; token: string; action: "push" | "check"; process_id: string | null; payload: { order_id: string } }[] }>(
     "api_outbox_claim",
     { kind: "bol_shipment" },
   );
   const results: { id: string; ok: boolean; error?: string }[] = [];
   for (const it of items) {
+    let payload: Record<string, unknown>;
     try {
-      const p = await ctx.db.rpc<{ order_item_ids: string[]; carrier: string; tracking_code: string | null } | null>(
-        "api_bol_shipment_payload",
-        { order_id: it.payload.order_id },
-      );
-      if (!p) throw new Error("Zending niet gevonden");
-      if (p.carrier !== "letter" && !p.tracking_code) throw new Error("Trackingcode ontbreekt");
-      await ctx.bol.confirmShipment({ orderItemIds: p.order_item_ids, carrier: p.carrier, trackingCode: p.tracking_code });
-      await ctx.db.rpc("api_outbox_complete", { id: it.id, token: it.token, ok: true });
-      results.push({ id: it.id, ok: true });
+      if (it.action === "check" && it.process_id) {
+        const r = await ctx.bol.checkProcess(it.process_id);
+        payload = r.status === "done" ? { result: "done" } : r.status === "pending" ? { result: "submitted" } : { result: "error", error: r.error };
+      } else {
+        const p = await ctx.db.rpc<{ order_item_ids: string[]; carrier: string; tracking_code: string | null } | null>("api_bol_shipment_payload", {
+          order_id: it.payload.order_id,
+        });
+        if (!p) throw new Error("Zending niet gevonden");
+        if (p.carrier !== "letter" && !p.tracking_code) throw new Error("Trackingcode ontbreekt");
+        const r = await ctx.bol.confirmShipment({ orderItemIds: p.order_item_ids, carrier: p.carrier, trackingCode: p.tracking_code });
+        payload = r.status === "done" ? { result: "done" } : { result: "submitted", process_id: r.processId };
+      }
     } catch (e) {
-      await ctx.db.rpc("api_outbox_complete", { id: it.id, token: it.token, ok: false, error: (e as Error).message });
-      results.push({ id: it.id, ok: false, error: (e as Error).message });
+      payload = { result: "error", error: (e as Error).message };
     }
+    await ctx.db.rpc("api_outbox_complete", { id: it.id, token: it.token, ...payload });
+    results.push({ id: it.id, ok: payload.result !== "error", error: payload.error as string | undefined });
   }
   return results;
 }
@@ -84,21 +89,20 @@ export async function pollBolOrders(ctx: Ctx) {
   return out;
 }
 
-/** Vergelijkt de gesimuleerde bol-stand met de gewenste stand en zet verschillen opnieuw in de wachtrij. */
-export async function reconcileSimulatedBol(ctx: Ctx) {
-  if (ctx.bol.mode !== "simulated") return { differences: 0, skipped: true };
-  const sim = await ctx.db.rpc<{ offer_key: string; stock: number | null; price_cents: number | null }[]>("api_bol_sim_read", {});
+/**
+ * Vergelijkt de stand bij bol (live of gesimuleerd) met de gewenste stand en zet verschillen opnieuw in de wachtrij.
+ * Vangt ook het zeldzame geval af dat een eerder verzonden update bij bol later is verwerkt dan een nieuwere.
+ */
+export async function reconcileBol(ctx: Ctx) {
   const bol = await ctx.db.rpc<{ sync: { product_id: string; bol_offer_id: string | null; bol_reference: string | null; ean: string | null; bol_enabled: boolean }[] }>(
     "api_admin_bol",
     {},
   );
-  const byKey = new Map(sim.map((s) => [s.offer_key, s]));
   const items = [];
   for (const p of bol.sync.filter((x) => x.bol_enabled)) {
-    const key = p.bol_offer_id ?? (p.bol_reference ? `ref:${p.bol_reference}` : `ean:${p.ean}`);
-    const s = byKey.get(key);
-    items.push({ product_id: p.product_id, kind: "stock", remote_value: s?.stock ?? null });
-    items.push({ product_id: p.product_id, kind: "price", remote_value: s?.price_cents ?? null });
+    const o = await ctx.bol.readOffer({ offerId: p.bol_offer_id, reference: p.bol_reference, ean: p.ean });
+    items.push({ product_id: p.product_id, kind: "stock", remote_value: o?.stock ?? null });
+    items.push({ product_id: p.product_id, kind: "price", remote_value: o?.priceCents ?? null });
   }
   return ctx.db.rpc<{ differences: number }>("api_bol_record_remote", { items });
 }

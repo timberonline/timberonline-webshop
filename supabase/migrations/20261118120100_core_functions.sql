@@ -62,15 +62,37 @@ left join public.product_components pc on pc.product_id = p.id
 left join public.component_stock cs on cs.id = pc.component_id
 group by p.id;
 
--- bol-voorraad = verkoopbare eenheden min buffer (standaard 1 eenheid per SKU voor de webshop)
+-- bol-voorraad = verkoopbare eenheden min buffer (standaard 1 eenheid per SKU voor de webshop).
+-- Delen meerdere bol-actieve artikelen een component, dan krijgt elk een evenredig deel van de vrije stuks,
+-- zodat de gepubliceerde bol-standen samen nooit meer dan de fysieke voorraad beloven.
 create or replace function public.bol_target_stock(p_product uuid) returns int
 language sql stable as $$
   select case when p.status <> 'active' or not p.bol_enabled then 0
-              else greatest(0, pa.available_units - coalesce(p.bol_buffer_units, public.setting_int('bol_buffer_units', 1)))
+              else greatest(0,
+                coalesce((
+                  select min(floor(
+                           (greatest(cs.free, 0) / greatest(1, (
+                              select count(*) from public.product_components pc2
+                              join public.products p2 on p2.id = pc2.product_id
+                              where pc2.component_id = pc.component_id and p2.bol_enabled and p2.status = 'active')))::numeric
+                           / pc.qty))::int
+                  from public.product_components pc
+                  join public.component_stock cs on cs.id = pc.component_id
+                  where pc.product_id = p.id), 0)
+                - coalesce(p.bol_buffer_units, public.setting_int('bol_buffer_units', 1)))
          end
   from public.products p
-  join public.product_availability pa on pa.product_id = p.id
   where p.id = p_product
+$$;
+
+-- E-mail als onderdeel van dezelfde transactie klaarzetten; versturen gebeurt daarna (met herpogingen).
+create or replace function public.enqueue_email(p_order uuid, p_kind text) returns void
+language sql as $$
+  insert into public.email_log (order_id, kind, to_email, status, attempts)
+  select o.id, p_kind, o.email, 'pending', 0
+  from public.orders o
+  where o.id = p_order and o.channel = 'web' and coalesce(o.email, '') <> ''
+  on conflict (order_id, kind) do nothing
 $$;
 
 create or replace function public.mark_bol_stock_dirty(p_components uuid[]) returns void
@@ -434,6 +456,9 @@ begin
          attention_reason = case when stock_status = 'shortage' then null else attention_reason end
    where id = p_order;
   perform public.mark_bol_stock_dirty(v_comps);
+  if exists (select 1 from public.orders where id = p_order and payment_status in ('paid', 'partially_refunded')) then
+    perform public.enqueue_email(p_order, 'order_confirmation');
+  end if;
   return 'committed';
 end $$;
 
@@ -480,6 +505,21 @@ begin
   end if;
 
   v_late := o.payment_status in ('expired', 'cancelled', 'failed') or o.stock_status = 'released';
+
+  -- Betaling voor een order die de beheerder al had geannuleerd: niet afboeken, wel zichtbaar voor terugbetaling.
+  if o.fulfillment_status = 'cancelled' then
+    update public.orders set
+      payment_status = 'paid', paid_at = now(),
+      stripe_session_id = coalesce(stripe_session_id, p->>'session_id'),
+      stripe_payment_intent_id = coalesce(p->>'payment_intent_id', stripe_payment_intent_id),
+      payment_method = coalesce(p->>'payment_method', payment_method),
+      needs_attention = true,
+      attention_reason = 'Betaling ontvangen voor een geannuleerde order: terugbetalen'
+    where id = o.id;
+    perform public.audit(v_actor, 'order_paid_after_cancel', 'order', o.id::text, null, null);
+    return jsonb_build_object('ok', true, 'already', false, 'order_id', o.id, 'number', o.number,
+                              'stock_status', o.stock_status, 'late', true, 'refund_required', true);
+  end if;
 
   update public.orders set
     payment_status = 'paid',
@@ -843,8 +883,8 @@ language plpgsql as $$
 declare v_out jsonb := '[]'; r record; v_token uuid;
 begin
   for r in
-    select id, kind, payload, attempts from public.outbox
-    where ((status = 'pending' and next_attempt_at <= now())
+    select id, kind, payload, attempts, status, process_id from public.outbox
+    where ((status in ('pending', 'submitted') and next_attempt_at <= now())
        or (status = 'in_flight' and claimed_at < now() - interval '2 minutes'))
       and (p->>'kind' is null or kind = p->>'kind')
     order by created_at
@@ -853,24 +893,31 @@ begin
   loop
     v_token := gen_random_uuid();
     update public.outbox set status = 'in_flight', claim_token = v_token, claimed_at = now() where id = r.id;
-    v_out := v_out || jsonb_build_object('id', r.id, 'kind', r.kind, 'payload', r.payload, 'token', v_token, 'attempts', r.attempts);
+    v_out := v_out || jsonb_build_object('id', r.id, 'kind', r.kind, 'payload', r.payload, 'token', v_token, 'attempts', r.attempts,
+                                         'action', case when r.status = 'submitted' then 'check' else 'push' end,
+                                         'process_id', r.process_id);
   end loop;
   return jsonb_build_object('ok', true, 'items', v_out);
 end $$;
 
+-- result: 'done' | 'submitted' (asynchroon geaccepteerd, processtatus volgt) | 'error'
 create or replace function public.api_outbox_complete(p jsonb) returns jsonb
 language plpgsql as $$
-declare o public.outbox%rowtype; v_attempts int;
+declare o public.outbox%rowtype; v_attempts int; v_result text := coalesce(p->>'result', case when (p->>'ok')::boolean then 'done' else 'error' end);
 begin
   select * into o from public.outbox where id = (p->>'id')::uuid for update;
   if not found or o.claim_token is distinct from (p->>'token')::uuid then
     return jsonb_build_object('ok', false, 'stale', true);
   end if;
-  if coalesce((p->>'ok')::boolean, false) then
-    update public.outbox set status = 'done', done_at = now(), claim_token = null, last_error = null where id = o.id;
+  if v_result = 'done' then
+    update public.outbox set status = 'done', done_at = now(), claim_token = null, last_error = null, process_id = null where id = o.id;
+  elsif v_result = 'submitted' then
+    update public.outbox set status = 'submitted', claim_token = null, process_id = coalesce(p->>'process_id', process_id),
+                             next_attempt_at = now() + interval '15 seconds'
+     where id = o.id;
   else
     v_attempts := o.attempts + 1;
-    update public.outbox set attempts = v_attempts, claim_token = null,
+    update public.outbox set attempts = v_attempts, claim_token = null, process_id = null,
       status = case when v_attempts >= 8 then 'failed' else 'pending' end,
       last_error = left(coalesce(p->>'error', 'onbekende fout'), 500),
       next_attempt_at = now() + make_interval(secs => least(3600, 30 * power(2, v_attempts - 1)::int))
@@ -900,7 +947,7 @@ begin
   values ((p->>'order_id')::uuid, p->>'kind', p->>'to', 'sending')
   on conflict (order_id, kind) do update
     set status = 'sending', attempts = e.attempts + 1, error = null, to_email = excluded.to_email
-    where e.status = 'failed' or (e.status = 'sending' and e.updated_at < now() - interval '5 minutes')
+    where e.status in ('pending', 'failed') or (e.status = 'sending' and e.updated_at < now() - interval '5 minutes')
   returning id into v_id;
   return jsonb_build_object('ok', true, 'claimed', v_id is not null, 'id', v_id);
 end $$;
@@ -1204,6 +1251,7 @@ begin
   end if;
 
   if v_first_handover then
+    perform public.enqueue_email(o.id, 'shipped');
     if o.channel = 'bol' then
       insert into public.outbox (kind, dedupe_key, payload)
       values ('bol_shipment', 'bol_shipment:' || o.id,

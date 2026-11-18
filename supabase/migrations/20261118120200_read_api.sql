@@ -353,7 +353,11 @@ $$;
 create or replace function public.api_email_retry_list(p jsonb) returns jsonb
 language sql stable as $$
   select coalesce(jsonb_agg(jsonb_build_object('order_id', order_id, 'kind', kind)), '[]')
-  from (select order_id, kind from public.email_log where status = 'failed' and attempts < 5 order by updated_at limit 20) x
+  from (select order_id, kind from public.email_log
+        where attempts < 5 and created_at > now() - interval '7 days'
+          and (status in ('pending', 'failed') or (status = 'sending' and updated_at < now() - interval '5 minutes'))
+        order by updated_at limit 20) x
 $$;
 
 select public.lockdown_privileges();
+notify pgrst, 'reload schema';

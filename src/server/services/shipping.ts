@@ -42,6 +42,7 @@ export async function createLabel(ctx: Ctx, actor: string, shipmentId: string) {
   const o = claim.order!;
   try {
     const res = await ctx.carriers.createLabel({
+      idempotencyKey: `${shipmentId}:${s.carrier}`,
       carrier: s.carrier,
       orderNumber: o.number,
       shipDate: s.ship_date,

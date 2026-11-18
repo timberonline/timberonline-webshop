@@ -57,7 +57,7 @@ export async function startCheckout(ctx: Ctx, input: CheckoutInput): Promise<Che
         },
       ],
       shipping_address_collection: { allowed_countries: ["NL", "BE"] },
-      expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+      expires_at: Math.floor(Date.now() / 1000) + 31 * 60, // Stripe eist ≥ 30 min; reservering loopt 35 min
       success_url: `${ctx.appUrl}/bestelling/bedankt?order=${res.order_id}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${ctx.appUrl}/winkelwagen?geannuleerd=${res.order_id}`,
     };

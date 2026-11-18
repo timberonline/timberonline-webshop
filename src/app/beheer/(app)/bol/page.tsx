@@ -24,7 +24,7 @@ export default async function BolPage({ searchParams }: PageProps<"/beheer/bol">
         <div className="inline-form">
           <form action={syncNowAction}><button className="btn btn-sm">Nu synchroniseren</button></form>
           <form action={enqueueAllAction}><button className="btn btn-sm btn-secondary">Alles herberekenen</button></form>
-          {mode === "gesimuleerd" ? <form action={reconcileAction}><button className="btn btn-sm btn-secondary">Vergelijk met bol</button></form> : null}
+          <form action={reconcileAction}><button className="btn btn-sm btn-secondary">Vergelijk met bol</button></form>
         </div>
       </div>
       <Flash sp={sp} />

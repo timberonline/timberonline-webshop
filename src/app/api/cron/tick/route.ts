@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { env } from "@/server/env";
 import { getCtx } from "@/server/services/runtime";
-import { pollBolOrders, processBolQueue, processOutbox } from "@/server/services/bol-sync";
+import { pollBolOrders, processBolQueue, processOutbox, reconcileBol } from "@/server/services/bol-sync";
 import { sendOrderEmail } from "@/server/services/email";
 
 function authorized(request: Request) {
@@ -22,7 +22,9 @@ export async function GET(request: Request) {
   const bol = await processBolQueue(ctx, { limit: 50 });
   const outbox = await processOutbox(ctx);
   const imported = ctx.bol.mode === "live" ? await pollBolOrders(ctx) : [];
+  const reconciled = await reconcileBol(ctx).catch(() => ({ differences: -1 }));
+  if (reconciled.differences > 0) await processBolQueue(ctx, { limit: 50 });
   const retry = await ctx.db.rpc<{ order_id: string; kind: "order_confirmation" | "shipped" }[]>("api_email_retry_list", {});
   for (const m of retry) await sendOrderEmail(ctx, m.order_id, m.kind);
-  return NextResponse.json({ expired: expired.expired, bol: bol.length, outbox: outbox.length, imported: imported.length, mails: retry.length });
+  return NextResponse.json({ expired: expired.expired, bol: bol.length, outbox: outbox.length, imported: imported.length, mails: retry.length, bol_differences: reconciled.differences });
 }

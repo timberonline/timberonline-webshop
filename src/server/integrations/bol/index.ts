@@ -19,6 +19,8 @@ export interface BolDriver {
   checkProcess(processId: string): Promise<BolProcessResult>;
   confirmShipment(input: { orderItemIds: string[]; carrier: string; trackingCode: string | null }): Promise<BolPushResult>;
   fetchOpenOrders(): Promise<BolOrder[]>;
+  /** Actuele stand bij bol (voor reconciliatie); null als het aanbod niet bestaat. */
+  readOffer(ref: BolOfferRef): Promise<{ stock: number | null; priceCents: number | null } | null>;
 }
 
 export function offerKey(ref: BolOfferRef) {
@@ -66,6 +68,11 @@ export function createSimulatedBol(
     async fetchOpenOrders() {
       return [];
     },
+    async readOffer(ref) {
+      const all = await db.rpc<{ offer_key: string; stock: number | null; price_cents: number | null }[]>("api_bol_sim_read", {});
+      const o = all.find((x) => x.offer_key === offerKey(ref));
+      return o ? { stock: o.stock, priceCents: o.price_cents } : null;
+    },
   };
 }
 
@@ -76,8 +83,10 @@ const V10 = "application/vnd.retailer.v10+json";
  * bol Retailer API v10. Niet geactiveerd (BOL_MODE=simulated) tot de eigenaar de API-sleutels levert
  * en de gekoppelde aanbiedingen en beginstanden zijn gecontroleerd.
  */
-export function createLiveBol(opts: { clientId: string; clientSecret: string; fetchImpl?: typeof fetch; baseUrl?: string }): BolDriver {
-  const f = opts.fetchImpl ?? fetch;
+export function createLiveBol(opts: { clientId: string; clientSecret: string; fetchImpl?: typeof fetch; baseUrl?: string; timeoutMs?: number }): BolDriver {
+  const raw = opts.fetchImpl ?? fetch;
+  // Harde time-out: een verzoek kan nooit langer lopen dan de claimtermijn (2 min) van de sync-wachtrij.
+  const f = (url: string, init: RequestInit) => raw(url, { ...init, signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000) });
   const base = opts.baseUrl ?? "https://api.bol.com";
   let token: { value: string; exp: number } | null = null;
 
@@ -170,6 +179,18 @@ export function createLiveBol(opts: { clientId: string; clientSecret: string; fe
         });
       }
       return out;
+    },
+    async readOffer(ref) {
+      if (!ref.offerId) return null;
+      const res = await f(`${base}/retailer/offers/${encodeURIComponent(ref.offerId)}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${await auth()}`, Accept: V10 },
+      });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`bol GET offer mislukt (HTTP ${res.status})`);
+      const json = (await res.json()) as { stock?: { amount?: number }; pricing?: { bundlePrices?: { quantity: number; unitPrice: number }[] } };
+      const unit = json.pricing?.bundlePrices?.find((b) => b.quantity === 1)?.unitPrice;
+      return { stock: json.stock?.amount ?? null, priceCents: unit != null ? Math.round(unit * 100) : null };
     },
   };
 }

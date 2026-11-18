@@ -4,6 +4,8 @@ import { renderLabel, type Address } from "../../pdf/labels";
 export type Carrier = "dhl" | "postnl" | "letter";
 
 export type LabelRequest = {
+  /** Stabiele sleutel per zending; live drivers moeten deze als idempotentiesleutel/labelId aan de vervoerder meegeven. */
+  idempotencyKey: string;
   carrier: Carrier;
   orderNumber: string;
   shipDate: string;
@@ -61,6 +63,8 @@ export function createLiveCarriers(): CarrierDriver {
     mode: "live",
     async createLabel(req) {
       if (req.carrier === "letter") return letterLabel(req);
+      // Bij implementatie: req.idempotencyKey meesturen (DHL Parcel: labelId; PostNL: eigen referentie) en bij
+      // een herhaalde aanvraag eerst het bestaande label bij de vervoerder ophalen in plaats van een nieuw te maken.
       throw new Error(`Koppeling met ${req.carrier === "dhl" ? "DHL" : "PostNL"} is nog niet geactiveerd`);
     },
   };

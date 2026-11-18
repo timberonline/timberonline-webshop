@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { testCtx } from "../helpers/ctx";
 import { componentOnHand, freshDb, productId, q, type TestDb } from "../helpers/db";
 import { applyCarrierEvent, confirmHandover, createLabel, dayPdf, labelPdf, prepareShipment, uploadLabel } from "@/server/services/shipping";
-import { importBolOrder, processBolQueue, processOutbox, reconcileSimulatedBol } from "@/server/services/bol-sync";
+import { importBolOrder, processBolQueue, processOutbox, reconcileBol } from "@/server/services/bol-sync";
 import { renderLabel } from "@/server/pdf/labels";
 
 let t: TestDb;
@@ -167,7 +167,7 @@ describe("bol-koppeling (gesimuleerd)", () => {
     expect(sim.stock).toBe(3); // 9 stuks = 4 tweepacks − 1 buffer
     const [row] = await q<{ status: string; pushed_value: number }>(t.pool, "select status, pushed_value from bol_sync where product_id = $1 and kind = 'stock'", [ip12pm]);
     expect(row).toEqual({ status: "synced", pushed_value: 3 });
-    const rec = await reconcileSimulatedBol(ctx);
+    const rec = await reconcileBol(ctx);
     expect(rec.differences).toBe(0);
   });
 
