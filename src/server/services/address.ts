@@ -1,8 +1,9 @@
 /** Splitst een adresregel ("Teststraat 12 A") in straat en huisnummer voor vervoerderslabels. */
 export function splitStreet(line1: string | null | undefined, line2?: string | null) {
-  const raw = (line1 ?? "").trim().replace(/\s+/g, " ");
-  const m = raw.match(/^(.*?\D)\s*,?\s*(\d+[\s-]?[a-zA-Z0-9]{0,4}(?:[\s-]?(?:hs|bis|[a-zA-Z]|\d{1,3}))?)$/);
-  if (m && m[1].trim().length > 1) {
+  const raw = (line1 ?? "").trim().replace(/\s+/g, " ").replace(/,\s*$/, "");
+  // laatste nummer-token is het huisnummer (straatnamen kunnen zelf cijfers bevatten, bijv. "Plein 1940 3")
+  const m = raw.match(/^(.+)\s+(\d+(?:[-\s]?[a-zA-Z]{1,3}|-\d{1,4}|-[a-zA-Z0-9]{1,4})?)$/) ?? raw.match(/^(\D+?)(\d+[a-zA-Z]{0,3})$/);
+  if (m && m[1].replace(/[,\s]+$/, "").trim().length > 1) {
     return { street: m[1].replace(/[,\s]+$/, "").trim(), house_number: m[2].trim(), address_extra: line2?.trim() || null };
   }
   // huisnummer staat soms op regel 2

@@ -49,7 +49,7 @@ export function renderEmail(kind: Kind, o: OrderForEmail) {
 ${linesTable(o)}
 <p style="margin:0 0 8px"><strong>Bezorgadres</strong><br>${address(o)}</p>
 <p style="margin:0 0 8px">${esc(o.delivery_promise)}</p>
-<p style="margin:0;color:#374151">${o.tracking_promised ? "Zodra je zending is overgedragen aan de vervoerder, ontvang je een e-mail met de track & trace-code." : "Je bestelling gaat als briefpost zonder track & trace. We mailen je zodra de brief is gepost."}</p>`,
+<p style="margin:0;color:#374151">${o.tracking_promised ? "Zodra je zending is overgedragen aan de vervoerder, ontvang je een e-mail met de track &amp; trace-code." : "Je bestelling gaat als briefpost zonder track &amp; trace. We mailen je zodra de brief is gepost."}</p>`,
     );
     const text = `Bedankt voor je bestelling ${o.number}.\n\n${o.lines.map((l) => `${l.qty} x ${l.title}: ${money(l.line_total_cents)}`).join("\n")}\nVerzending: ${o.shipping_cents ? money(o.shipping_cents) : "Gratis"}\nTotaal: ${money(o.total_cents)}\n\n${o.delivery_promise ?? ""}`;
     return { subject, html, text };
@@ -59,9 +59,9 @@ ${linesTable(o)}
   const subject = `Je bestelling ${o.number} is onderweg`;
   const tracking =
     s?.carrier === "letter"
-      ? `<p>Je bestelling is als briefpost verstuurd. Briefpost heeft geen track & trace; bezorging duurt meestal 1–3 werkdagen.</p>`
+      ? `<p>Je bestelling is als briefpost verstuurd. Briefpost heeft geen track &amp; trace; bezorging duurt meestal 1–3 werkdagen.</p>`
       : s?.tracking_code
-        ? `<p>Vervoerder: <strong>${esc(carrier)}</strong><br>Track & trace: <strong>${esc(s.tracking_code)}</strong></p>${s.tracking_url ? `<p><a href="${esc(s.tracking_url)}" style="display:inline-block;background:#0066FF;color:#FFFFFF;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:600">Volg je zending</a></p>` : ""}`
+        ? `<p>Vervoerder: <strong>${esc(carrier)}</strong><br>Track &amp; trace: <strong>${esc(s.tracking_code)}</strong></p>${s.tracking_url ? `<p><a href="${esc(s.tracking_url)}" style="display:inline-block;background:#0066FF;color:#FFFFFF;text-decoration:none;padding:12px 18px;border-radius:10px;font-weight:600">Volg je zending</a></p>` : ""}`
         : `<p>Vervoerder: <strong>${esc(carrier)}</strong></p>`;
   const html = layout(subject, `<h1 style="font-size:22px;margin:0 0 8px">Je bestelling is onderweg</h1><p>Bestelnummer <strong>${esc(o.number)}</strong> is overgedragen aan ${esc(carrier)}.</p>${tracking}`);
   const text = `Je bestelling ${o.number} is onderweg met ${carrier}.${s?.tracking_code ? `\nTrack & trace: ${s.tracking_code}${s.tracking_url ? `\n${s.tracking_url}` : ""}` : ""}`;
