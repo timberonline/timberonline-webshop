@@ -164,6 +164,8 @@ language sql stable as $$
     'stock_status', o.stock_status, 'fulfillment_status', o.fulfillment_status, 'customer_name', o.customer_name,
     'email', o.email, 'total_cents', o.total_cents, 'created_at', o.created_at, 'needs_attention', o.needs_attention,
     'attention_reason', o.attention_reason,
+    'mail_problem', exists (select 1 from public.email_log e where e.order_id = o.id
+                              and (e.status = 'failed' or (e.status in ('pending', 'sending') and e.updated_at < now() - interval '30 minutes'))),
     'items', (select coalesce(sum(qty), 0) from public.order_lines where order_id = o.id)
   ) order by o.created_at desc), '[]')
   from (
@@ -171,6 +173,9 @@ language sql stable as $$
     where (p->>'channel' is null or o.channel = p->>'channel')
       and (p->>'payment_status' is null or o.payment_status = p->>'payment_status')
       and (coalesce((p->>'attention')::boolean, false) = false or o.needs_attention)
+      and (coalesce((p->>'mail_problem')::boolean, false) = false or exists (
+             select 1 from public.email_log e where e.order_id = o.id
+               and (e.status = 'failed' or (e.status in ('pending', 'sending') and e.updated_at < now() - interval '30 minutes'))))
       and (p->>'q' is null or o.number ilike '%' || (p->>'q') || '%' or o.email ilike '%' || (p->>'q') || '%'
            or o.customer_name ilike '%' || (p->>'q') || '%' or o.bol_order_id ilike '%' || (p->>'q') || '%')
     order by o.created_at desc

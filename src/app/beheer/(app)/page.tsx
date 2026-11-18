@@ -32,7 +32,7 @@ export default async function Dashboard() {
   const problems = [
     o.bol_failed && { t: `${o.bol_failed} mislukte bol-update(s)`, href: "/beheer/bol" },
     o.shipment_exceptions && { t: `${o.shipment_exceptions} verzenduitzondering(en)`, href: "/beheer/verzendingen" },
-    o.email_failed && { t: `${o.email_failed} mislukte e-mail(s)`, href: "/beheer/orders?attention=1" },
+    o.email_failed && { t: `${o.email_failed} mislukte of vastgelopen e-mail(s)`, href: "/beheer/orders?mail=1" },
     o.outbox_failed && { t: `${o.outbox_failed} mislukte verzendbevestiging(en) naar bol`, href: "/beheer/bol" },
   ].filter(Boolean) as { t: string; href: string }[];
 

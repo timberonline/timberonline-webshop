@@ -100,5 +100,9 @@ describe("Codex R2-6: klaargezette mails blijven zichtbaar en worden opgepakt", 
     expect(list.map((x) => x.order_id)).toContain(r.order_id);
     const o = await t.db.rpc<{ email_failed: number }>("api_admin_overview", {});
     expect(o.email_failed).toBeGreaterThanOrEqual(1);
+    // Codex R3: vanuit de melding vindbaar via het mailfilter, ook zonder 'aandacht'-vlag
+    const orders = await t.db.rpc<{ id: string; mail_problem: boolean; needs_attention: boolean }[]>("api_admin_orders", { mail_problem: true });
+    const hit = orders.find((x) => x.id === r.order_id);
+    expect(hit).toMatchObject({ mail_problem: true, needs_attention: false });
   });
 });

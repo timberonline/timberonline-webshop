@@ -4,7 +4,7 @@ import { Flash, Status } from "../_components/ui";
 import { dateTime, money } from "@/lib/format";
 import { getDb } from "@/server/db";
 
-type Row = { id: string; number: string; channel: string; payment_status: string; stock_status: string; fulfillment_status: string; customer_name: string | null; email: string | null; total_cents: number; created_at: string; needs_attention: boolean; attention_reason: string | null; items: number };
+type Row = { id: string; number: string; channel: string; payment_status: string; stock_status: string; fulfillment_status: string; customer_name: string | null; email: string | null; total_cents: number; created_at: string; needs_attention: boolean; attention_reason: string | null; mail_problem: boolean; items: number };
 
 export default async function OrdersPage({ searchParams }: PageProps<"/beheer/orders">) {
   await connection();
@@ -15,6 +15,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/beheer/or
     channel: one("channel"),
     payment_status: one("payment_status"),
     attention: one("attention") === "1",
+    mail_problem: one("mail") === "1",
   });
   return (
     <>
@@ -50,6 +51,9 @@ export default async function OrdersPage({ searchParams }: PageProps<"/beheer/or
         <label className="check" style={{ flex: "0 0 auto" }}>
           <input type="checkbox" name="attention" value="1" defaultChecked={one("attention") === "1"} /> Alleen met aandacht
         </label>
+        <label className="check" style={{ flex: "0 0 auto" }}>
+          <input type="checkbox" name="mail" value="1" defaultChecked={one("mail") === "1"} /> Alleen met mailprobleem
+        </label>
         <button className="btn" style={{ flex: "0 0 auto" }}>
           Filter
         </button>
@@ -84,6 +88,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/beheer/or
                         Aandacht nodig
                       </div>
                     ) : null}
+                    {r.mail_problem ? <div className="small stock-none">E-mail niet verstuurd</div> : null}
                   </td>
                   <td className="nowrap">{dateTime(r.created_at)}</td>
                   <td>{r.customer_name ?? r.email ?? "–"}</td>
