@@ -24,6 +24,7 @@ type Order = {
   returns: { id: string; status: string; note: string | null; created_at: string; lines: { id: string; sku: string; title: string; qty: number; decision: string; decided_by: string | null }[] }[];
   outbox: { kind: string; status: string; attempts: number; last_error: string | null }[];
   audit: { id: number; at: string; actor: string; action: string }[];
+  now: string;
 };
 
 export default async function OrderPage({ params, searchParams }: PageProps<"/beheer/orders/[id]">) {
@@ -165,7 +166,7 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/be
                 <li key={e.kind}>
                   {e.kind === "shipped" ? "Verzendbericht" : "Bestelbevestiging"}: <Status value={e.status} /> <span className="small muted">{dateTime(e.updated_at)} · {e.attempts}×</span>
                   {e.error ? <div className="small stock-none">{e.error}</div> : null}
-                  {e.status === "failed" ? (
+                  {e.status === "failed" || ((e.status === "pending" || e.status === "sending") && Date.parse(e.updated_at) < Date.parse(o.now) - 30 * 60 * 1000) ? (
                     <form action={resendEmailAction} className="inline-form">
                       <input type="hidden" name="order_id" value={o.id} />
                       <input type="hidden" name="kind" value={e.kind} />

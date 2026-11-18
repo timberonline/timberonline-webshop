@@ -753,7 +753,9 @@ begin
     for update of s skip locked
   loop
     v_token := gen_random_uuid();
-    if r.status = 'submitted' then
+    -- Is er al een verzoek bij bol ingediend (proces-ID bekend), dan eerst de processtatus controleren,
+    -- ook als een eerdere controle werd onderbroken. Nooit blind opnieuw indienen.
+    if r.process_id is not null then
       v_action := 'check';
       v_value := r.claimed_value;
       update public.bol_sync set status = 'in_flight', claim_token = v_token, claimed_at = now()
@@ -795,8 +797,15 @@ begin
       attempts = 0, last_error = null, process_id = null, claim_token = null, next_attempt_at = now()
     where product_id = s.product_id and kind = s.kind;
   elsif v_result = 'submitted' then
-    update public.bol_sync set status = 'submitted', process_id = p->>'process_id', claim_token = null,
+    update public.bol_sync set status = 'submitted', process_id = coalesce(p->>'process_id', process_id), claim_token = null,
                                next_attempt_at = now() + interval '15 seconds'
+    where product_id = s.product_id and kind = s.kind;
+  elsif v_result = 'check_error' then
+    -- tijdelijke fout bij het opvragen van de processtatus: proces-ID bewaren en later opnieuw controleren
+    v_attempts := s.attempts + 1;
+    update public.bol_sync set status = case when v_attempts >= 8 then 'failed' else 'submitted' end,
+           attempts = v_attempts, last_error = left(coalesce(p->>'error', 'processtatus onbekend'), 500), claim_token = null,
+           next_attempt_at = now() + make_interval(secs => least(3600, 30 * power(2, v_attempts - 1)::int))
     where product_id = s.product_id and kind = s.kind;
   else
     v_attempts := s.attempts + 1;
@@ -894,7 +903,7 @@ begin
     v_token := gen_random_uuid();
     update public.outbox set status = 'in_flight', claim_token = v_token, claimed_at = now() where id = r.id;
     v_out := v_out || jsonb_build_object('id', r.id, 'kind', r.kind, 'payload', r.payload, 'token', v_token, 'attempts', r.attempts,
-                                         'action', case when r.status = 'submitted' then 'check' else 'push' end,
+                                         'action', case when r.process_id is not null then 'check' else 'push' end,
                                          'process_id', r.process_id);
   end loop;
   return jsonb_build_object('ok', true, 'items', v_out);
@@ -914,6 +923,12 @@ begin
   elsif v_result = 'submitted' then
     update public.outbox set status = 'submitted', claim_token = null, process_id = coalesce(p->>'process_id', process_id),
                              next_attempt_at = now() + interval '15 seconds'
+     where id = o.id;
+  elsif v_result = 'check_error' then
+    v_attempts := o.attempts + 1;
+    update public.outbox set status = case when v_attempts >= 8 then 'failed' else 'submitted' end, attempts = v_attempts,
+           claim_token = null, last_error = left(coalesce(p->>'error', 'processtatus onbekend'), 500),
+           next_attempt_at = now() + make_interval(secs => least(3600, 30 * power(2, v_attempts - 1)::int))
      where id = o.id;
   else
     v_attempts := o.attempts + 1;
@@ -941,23 +956,27 @@ end $$;
 -- ---------------------------------------------------------------------------
 create or replace function public.api_email_claim(p jsonb) returns jsonb
 language plpgsql as $$
-declare v_id uuid;
+declare v_id uuid; v_token uuid := gen_random_uuid();
 begin
-  insert into public.email_log as e (order_id, kind, to_email, status)
-  values ((p->>'order_id')::uuid, p->>'kind', p->>'to', 'sending')
+  insert into public.email_log as e (order_id, kind, to_email, status, claim_token)
+  values ((p->>'order_id')::uuid, p->>'kind', p->>'to', 'sending', v_token)
   on conflict (order_id, kind) do update
-    set status = 'sending', attempts = e.attempts + 1, error = null, to_email = excluded.to_email
+    set status = 'sending', attempts = e.attempts + 1, error = null, to_email = excluded.to_email, claim_token = v_token
     where e.status in ('pending', 'failed') or (e.status = 'sending' and e.updated_at < now() - interval '5 minutes')
   returning id into v_id;
-  return jsonb_build_object('ok', true, 'claimed', v_id is not null, 'id', v_id);
+  return jsonb_build_object('ok', true, 'claimed', v_id is not null, 'id', v_id, 'token', case when v_id is not null then v_token end);
 end $$;
 
+-- Alleen de poging met het actuele claimtoken mag de uitkomst vastleggen (een oude, vastgelopen poging niet).
 create or replace function public.api_email_complete(p jsonb) returns jsonb
-language sql as $$
-  update public.email_log set status = p->>'status', provider_id = p->>'provider_id', error = left(p->>'error', 500)
-   where id = (p->>'id')::uuid;
-  select jsonb_build_object('ok', true);
-$$;
+language plpgsql as $$
+declare v_id uuid;
+begin
+  update public.email_log set status = p->>'status', provider_id = p->>'provider_id', error = left(p->>'error', 500), claim_token = null
+   where id = (p->>'id')::uuid and claim_token = (p->>'token')::uuid and status = 'sending'
+  returning id into v_id;
+  return jsonb_build_object('ok', v_id is not null, 'stale', v_id is null);
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Verzending
@@ -1425,6 +1444,9 @@ begin
   -- samenstelling alleen aanpasbaar voor bundels (sets/hoesjes volgen de fysieke telling)
   if v_comps is not null and pr.kind = 'bundle' then
     if jsonb_array_length(v_comps) = 0 then raise exception 'bundle_needs_components'; end if;
+    -- oude én nieuwe componenten: bol-standen van artikelen die deze delen opnieuw berekenen
+    perform public.mark_bol_stock_dirty(public.product_components_of(array[pr.id])
+              || array(select (c->>'component_id')::uuid from jsonb_array_elements(v_comps) c));
     delete from public.product_components where product_id = pr.id;
     insert into public.product_components (product_id, component_id, qty)
     select pr.id, (c->>'component_id')::uuid, sum((c->>'qty')::int) from jsonb_array_elements(v_comps) c group by 2;

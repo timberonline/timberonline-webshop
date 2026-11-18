@@ -58,7 +58,9 @@ export async function reconcileAction() {
   try {
     await requireAdmin(ROLES.catalog);
     const r = await reconcileBol(getCtx());
-    msg = { ok: `Vergelijking klaar: ${r.differences} verschil(len) opnieuw in de wachtrij` };
+    msg = r.errors.length
+      ? { fout: `${r.differences} verschil(len) opnieuw in de wachtrij; niet te lezen: ${r.errors.map((e) => `${e.sku} (${e.error})`).join(", ")}` }
+      : { ok: `Vergelijking klaar: ${r.differences} verschil(len) opnieuw in de wachtrij` };
   } catch (e) {
     msg = { fout: errText(e) };
   }

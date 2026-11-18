@@ -22,9 +22,10 @@ export async function GET(request: Request) {
   const bol = await processBolQueue(ctx, { limit: 50 });
   const outbox = await processOutbox(ctx);
   const imported = ctx.bol.mode === "live" ? await pollBolOrders(ctx) : [];
-  const reconciled = await reconcileBol(ctx).catch(() => ({ differences: -1 }));
+  const reconciled = await reconcileBol(ctx).catch((e: Error) => ({ differences: 0, errors: [{ sku: "*", error: e.message }] }));
+  if (reconciled.errors.length) console.error("bol-reconciliatie: niet alle aanbiedingen gelezen", reconciled.errors);
   if (reconciled.differences > 0) await processBolQueue(ctx, { limit: 50 });
   const retry = await ctx.db.rpc<{ order_id: string; kind: "order_confirmation" | "shipped" }[]>("api_email_retry_list", {});
   for (const m of retry) await sendOrderEmail(ctx, m.order_id, m.kind);
-  return NextResponse.json({ expired: expired.expired, bol: bol.length, outbox: outbox.length, imported: imported.length, mails: retry.length, bol_differences: reconciled.differences });
+  return NextResponse.json({ expired: expired.expired, bol: bol.length, outbox: outbox.length, imported: imported.length, mails: retry.length, bol_differences: reconciled.differences, bol_read_errors: reconciled.errors.length });
 }

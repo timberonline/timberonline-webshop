@@ -73,15 +73,16 @@ export async function sendOrderEmail(ctx: Ctx, orderId: string, kind: Kind) {
   const order = await ctx.db.rpc<OrderForEmail | null>("api_order_for_email", { order_id: orderId });
   if (!order || order.channel !== "web" || !order.email) return { sent: false, reason: "geen webshoporder of e-mailadres" };
   if (kind === "order_confirmation" && order.stock_status !== "committed") return { sent: false, reason: "voorraad niet afgeboekt" };
-  const claim = await ctx.db.rpc<{ claimed: boolean; id: string }>("api_email_claim", { order_id: orderId, kind, to: order.email });
-  if (!claim.claimed) return { sent: false, reason: "al verstuurd" };
+  const claim = await ctx.db.rpc<{ claimed: boolean; id: string; token: string }>("api_email_claim", { order_id: orderId, kind, to: order.email });
+  if (!claim.claimed) return { sent: false, reason: "al verstuurd of wordt verstuurd" };
   try {
     const msg = renderEmail(kind, order);
+    // Stabiele idempotentiesleutel: ook bij een herhaalde poging levert Resend het bericht maar één keer af.
     const res = await ctx.mail.send({ ...msg, to: order.email, idempotencyKey: `${kind}:${orderId}` });
-    await ctx.db.rpc("api_email_complete", { id: claim.id, status: res.status, provider_id: res.providerId });
+    await ctx.db.rpc("api_email_complete", { id: claim.id, token: claim.token, status: res.status, provider_id: res.providerId });
     return { sent: true, status: res.status };
   } catch (e) {
-    await ctx.db.rpc("api_email_complete", { id: claim.id, status: "failed", error: (e as Error).message });
+    await ctx.db.rpc("api_email_complete", { id: claim.id, token: claim.token, status: "failed", error: (e as Error).message });
     return { sent: false, reason: (e as Error).message };
   }
 }

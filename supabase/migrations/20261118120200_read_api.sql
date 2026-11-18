@@ -100,7 +100,9 @@ language sql stable as $$
     'bol_failed', (select count(*) from public.bol_sync where status = 'failed'),
     'bol_pending', (select count(*) from public.bol_sync where status in ('pending', 'in_flight', 'submitted')),
     'shipment_exceptions', (select count(*) from public.shipments where status = 'exception'),
-    'email_failed', (select count(*) from public.email_log where status = 'failed'),
+    -- mislukt, of al langer dan 30 minuten niet verstuurd (bv. cron/mailstoring): altijd zichtbaar
+    'email_failed', (select count(*) from public.email_log
+                     where status = 'failed' or (status in ('pending', 'sending') and updated_at < now() - interval '30 minutes')),
     'outbox_failed', (select count(*) from public.outbox where status = 'failed'),
     'stock_totals', (select jsonb_build_object('protectors', coalesce(sum(on_hand) filter (where kind = 'protector'), 0),
                                                'cases', coalesce(sum(on_hand) filter (where kind = 'case'), 0),
@@ -200,6 +202,7 @@ language sql stable as $$
                               where rl.return_id = rt.id)) order by rt.created_at), '[]')
                   from public.returns rt where rt.order_id = o.id),
       'outbox', (select coalesce(jsonb_agg(to_jsonb(ob) - 'claim_token'), '[]') from public.outbox ob where ob.payload->>'order_id' = o.id::text),
+      'now', now(),
       'audit', (select coalesce(jsonb_agg(to_jsonb(a) order by a.id desc), '[]') from public.audit_log a
                 where a.entity_id = o.id::text
                    or a.entity_id in (select s.id::text from public.shipments s where s.order_id = o.id))
@@ -354,7 +357,7 @@ create or replace function public.api_email_retry_list(p jsonb) returns jsonb
 language sql stable as $$
   select coalesce(jsonb_agg(jsonb_build_object('order_id', order_id, 'kind', kind)), '[]')
   from (select order_id, kind from public.email_log
-        where attempts < 5 and created_at > now() - interval '7 days'
+        where attempts < 5
           and (status in ('pending', 'failed') or (status = 'sending' and updated_at < now() - interval '5 minutes'))
         order by updated_at limit 20) x
 $$;

@@ -213,14 +213,17 @@ describe("e-mail", () => {
   it("claimt elk soort bericht maar één keer per order", async () => {
     const id = await paidWebOrder([["TO-SP2-IP15-PRV", 1]]);
     const claims = await Promise.all(
-      [1, 2, 3].map(() => t.db.rpc<{ claimed: boolean; id: string }>("api_email_claim", { order_id: id, kind: "shipped", to: "k@example.test" })),
+      [1, 2, 3].map(() => t.db.rpc<{ claimed: boolean; id: string; token: string }>("api_email_claim", { order_id: id, kind: "shipped", to: "k@example.test" })),
     );
     expect(claims.filter((c) => c.claimed)).toHaveLength(1);
     const winner = claims.find((c) => c.claimed)!;
-    await t.db.rpc("api_email_complete", { id: winner.id, status: "failed", error: "timeout" });
-    const retry = await t.db.rpc<{ claimed: boolean; id: string }>("api_email_claim", { order_id: id, kind: "shipped", to: "k@example.test" });
+    await t.db.rpc("api_email_complete", { id: winner.id, token: winner.token, status: "failed", error: "timeout" });
+    const retry = await t.db.rpc<{ claimed: boolean; id: string; token: string }>("api_email_claim", { order_id: id, kind: "shipped", to: "k@example.test" });
     expect(retry.claimed).toBe(true);
-    await t.db.rpc("api_email_complete", { id: retry.id, status: "sent", provider_id: "re_123" });
+    // een verouderde poging (oud token) kan de uitkomst niet meer overschrijven
+    const stale = await t.db.rpc<{ ok: boolean; stale: boolean }>("api_email_complete", { id: winner.id, token: winner.token, status: "failed", error: "laat" });
+    expect(stale.stale).toBe(true);
+    await t.db.rpc("api_email_complete", { id: retry.id, token: retry.token, status: "sent", provider_id: "re_123" });
     const after = await t.db.rpc<{ claimed: boolean }>("api_email_claim", { order_id: id, kind: "shipped", to: "k@example.test" });
     expect(after.claimed).toBe(false);
   });

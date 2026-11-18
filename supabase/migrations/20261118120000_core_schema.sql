@@ -360,6 +360,7 @@ create table if not exists public.email_log (
   status text not null default 'pending' check (status in ('pending', 'sending', 'sent', 'simulated', 'failed')),
   provider_id text,
   error text,
+  claim_token uuid,
   attempts int not null default 1,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
