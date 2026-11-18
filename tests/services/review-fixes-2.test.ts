@@ -1,7 +1,7 @@
 /** Regressietests voor de bevindingen uit Codex-reviewronde 2. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { testCtx } from "../helpers/ctx";
-import { freshDb, productId, q, type TestDb } from "../helpers/db";
+import { freshDb, productId, q, type TestDb, activateSeedBundles } from "../helpers/db";
 import { processBolQueue, reconcileBol } from "@/server/services/bol-sync";
 
 let t: TestDb;
@@ -10,9 +10,10 @@ const P: Record<string, string> = {};
 
 beforeAll(async () => {
   t = await freshDb();
+  await activateSeedBundles(t);
   for (const sku of ["TO-SP2-IP15-PRV", "TO-SP2-IP15P-PRV", "TO-SP2-IP15PM-PRV", "TO-SP2-IP14-STD", "TO-BND-IP14-CS-SP1"]) P[sku] = await productId(t.pool, sku);
   for (const sku of ["TO-SP2-IP15-PRV", "TO-SP2-IP15P-PRV", "TO-SP2-IP15PM-PRV", "TO-SP2-IP14-STD"]) {
-    await t.db.rpc("api_product_save", { actor: ACTOR, id: P[sku], bol_enabled: true, bol_offer_id: `r2-${sku}` });
+    await t.db.rpc("api_product_save", { actor: ACTOR, id: P[sku], bol_enabled: true, bol_title_fix_required: false, bol_offer_id: `r2-${sku}` });
   }
 });
 afterAll(async () => t.close());

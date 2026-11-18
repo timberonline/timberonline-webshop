@@ -1,6 +1,14 @@
 import { Resend } from "resend";
 
-export type MailMessage = { to: string; subject: string; html: string; text: string; idempotencyKey: string };
+export type MailMessage = {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  idempotencyKey: string;
+  /** Optioneel per bericht (bv. contactformulier: antwoorden gaat naar de klant). Overschrijft de vaste reply-to. */
+  replyTo?: string;
+};
 export type MailResult = { status: "sent" | "simulated"; providerId: string | null };
 
 export interface MailDriver {
@@ -27,7 +35,7 @@ export function createResendMail(opts: { apiKey: string; from: string; replyTo?:
       const to = opts.testRecipient ?? msg.to;
       const subject = opts.testRecipient ? `[TEST → ${msg.to}] ${msg.subject}` : msg.subject;
       const { data, error } = await resend.emails.send(
-        { from: opts.from, to: [to], subject, html: msg.html, text: msg.text, ...(opts.replyTo ? { replyTo: opts.replyTo } : {}) },
+        { from: opts.from, to: [to], subject, html: msg.html, text: msg.text, ...(msg.replyTo ?? opts.replyTo ? { replyTo: msg.replyTo ?? opts.replyTo } : {}) },
         { idempotencyKey: msg.idempotencyKey },
       );
       if (error) throw new Error(`Resend: ${error.message}`);

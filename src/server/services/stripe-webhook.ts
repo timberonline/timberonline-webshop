@@ -71,6 +71,17 @@ async function markPaid(ctx: Ctx, session: SessionLike) {
   return { handled: true, detail: res.already ? "al verwerkt" : res.stock_status };
 }
 
+/** Eén terugbetaling vanuit Stripe verwerken (eigen refund afronden of externe refund vastleggen). Idempotent. */
+async function refundUpdate(ctx: Ctx, r: Stripe.Refund, paymentIntentId: string | null) {
+  await ctx.db.rpc("api_refund_provider_update", {
+    provider_refund_id: r.id,
+    payment_intent_id: paymentIntentId,
+    amount_cents: r.amount,
+    status: r.status,
+    error: r.failure_reason ?? null,
+  });
+}
+
 async function dispatch(ctx: Ctx, event: Stripe.Event): Promise<{ handled: boolean; detail?: string }> {
   switch (event.type) {
     case "checkout.session.completed": {
@@ -97,11 +108,23 @@ async function dispatch(ctx: Ctx, event: Stripe.Event): Promise<{ handled: boole
       const pi = typeof charge.payment_intent === "string" ? charge.payment_intent : charge.payment_intent?.id;
       if (!pi || !ctx.stripe) return { handled: false };
       const refunds = await ctx.stripe.refunds.list({ payment_intent: pi, limit: 100 });
-      for (const r of refunds.data) {
-        if (r.status !== "succeeded") continue;
-        await ctx.db.rpc("api_refund_external", { payment_intent_id: pi, provider_refund_id: r.id, amount_cents: r.amount });
-      }
+      for (const r of refunds.data) await refundUpdate(ctx, r, pi);
       return { handled: true };
+    }
+    // Latere statuswijzigingen van een terugbetaling (bv. iDEAL-refund eerst "pending", later "succeeded" of "failed")
+    case "refund.created":
+    case "refund.updated":
+    case "refund.failed": {
+      const r = event.data.object as Stripe.Refund;
+      const pi = typeof r.payment_intent === "string" ? r.payment_intent : r.payment_intent?.id;
+      await refundUpdate(ctx, r, pi ?? null);
+      return { handled: true, detail: r.status ?? undefined };
+    }
+    case "charge.refund.updated": {
+      const r = event.data.object as Stripe.Refund;
+      const pi = typeof r.payment_intent === "string" ? r.payment_intent : r.payment_intent?.id;
+      await refundUpdate(ctx, r, pi ?? null);
+      return { handled: true, detail: r.status ?? undefined };
     }
     default:
       return { handled: false, detail: "genegeerd type" };

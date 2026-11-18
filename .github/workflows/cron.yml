@@ -1,0 +1,27 @@
+name: Onderhoud
+# Vercel Hobby voert cronjobs maar één keer per dag uit. Deze gratis GitHub-planning roept het beveiligde
+# onderhoudsendpoint vaker aan (verlopen reserveringen, bol-wachtrij en -orders, verzendbevestigingen, e-mailherpogingen).
+# Activeren: zet repository-variabele APP_URL en repository-secret CRON_SECRET (zelfde waarde als in Vercel).
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: onderhoud
+  cancel-in-progress: false
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Onderhoudstaak aanroepen
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "APP_URL of CRON_SECRET niet ingesteld: overgeslagen"
+            exit 0
+          fi
+          curl -fsS --max-time 120 -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/tick" -o /dev/null -w "HTTP %{http_code}\n"

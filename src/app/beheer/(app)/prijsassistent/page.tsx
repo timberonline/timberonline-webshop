@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { Flash, Status } from "../_components/ui";
 import { dateTime, money } from "@/lib/format";
+import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 import { integrationStatus } from "@/server/services/runtime";
 import { applyAction, cancelProposalAction, proposeAction } from "./actions";
@@ -9,6 +10,7 @@ type Item = { product_id: string; sku: string; title: string; channel: "web" | "
 type Proposal = { id: string; created_by: string; prompt: string; provider: string; items: Item[]; status: string; result: Item[] | null; created_at: string; decided_by: string | null; bol_status: Record<string, { status: string; last_error: string | null; pushed_value: number | null; desired_value: number | null }> };
 
 export default async function AssistantPage({ searchParams }: PageProps<"/beheer/prijsassistent">) {
+  await requireAdminPage(ROLES.catalog);
   await connection();
   const sp = await searchParams;
   const current = typeof sp.voorstel === "string" ? sp.voorstel : null;

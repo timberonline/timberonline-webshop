@@ -2,6 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Flash, Status } from "../_components/ui";
 import { CARRIER_LABEL, dateTime } from "@/lib/format";
+import { mayAccess, requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 import { integrationStatus } from "@/server/services/runtime";
 import { cancelShipmentAction, handoverAction, prepareAction, relabelAction, simulateAction, trackingAction, uploadLabelAction } from "./actions";
@@ -22,11 +23,14 @@ type View = {
 };
 
 export default async function ShipmentsPage({ searchParams }: PageProps<"/beheer/verzendingen">) {
+  const session = await requireAdminPage(ROLES.shipping);
   await connection();
   const sp = await searchParams;
   const date = typeof sp.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : undefined;
   const v = await getDb().rpc<View>("api_admin_shipments", date ? { date } : {});
   const simulated = integrationStatus().carriers.startsWith("gesimuleerd");
+  // De rol verzending mag geen orderdetails (betaling, klantgegevens) openen: dan alleen het ordernummer zonder link.
+  const orderRef = (id: string, number: string) => (mayAccess(session.role, "orders") ? <Link href={`/beheer/orders/${id}`}>{number}</Link> : <>{number}</>);
   const s = v.sender_address;
   const senderMissing = !s || !s.street || !s.house_number || !s.postal_code || !s.city;
   const exceptions = v.open.filter((o) => o.address_problems.length || o.shipment_status === "exception" || (o.deadline_soon && !["handed_over", "in_transit", "delivered", "ready_for_pickup"].includes(o.shipment_status ?? "")));
@@ -44,7 +48,7 @@ export default async function ShipmentsPage({ searchParams }: PageProps<"/beheer
       </div>
       <Flash sp={sp} />
       {simulated ? <p className="notice notice-info">Testmodus: DHL en PostNL maken voorbeeldlabels met gesimuleerde tracking. Briefpost maakt een adreslabel voor handmatig frankeren.</p> : null}
-      {senderMissing ? <p className="notice notice-warn">Afzenderadres ontbreekt op labels. <Link href="/beheer/instellingen">Stel het in bij Instellingen</Link>.</p> : null}
+      {senderMissing ? <p className="notice notice-warn">Afzenderadres ontbreekt op labels. {mayAccess(session.role, "settings") ? <><Link href="/beheer/instellingen">Stel het in bij Instellingen</Link>.</> : "Vraag de eigenaar dit in te stellen bij Instellingen."}</p> : null}
 
       {exceptions.length ? (
         <section className="card" aria-labelledby="uitz" style={{ marginBottom: 16, borderLeft: "4px solid var(--to-danger)" }}>
@@ -52,7 +56,7 @@ export default async function ShipmentsPage({ searchParams }: PageProps<"/beheer
           <ul style={{ margin: 0, paddingLeft: 18 }}>
             {exceptions.map((o) => (
               <li key={o.order_id}>
-                <Link href={`/beheer/orders/${o.order_id}`}>{o.number}</Link>:{" "}
+                {orderRef(o.order_id, o.number)}:{" "}
                 {[
                   ...o.address_problems.map((p) => `adres: ${p}`),
                   o.shipment_status === "exception" ? o.exception_reason ?? "uitzondering" : null,
@@ -72,7 +76,7 @@ export default async function ShipmentsPage({ searchParams }: PageProps<"/beheer
           <article key={o.order_id} className="card" aria-labelledby={`o-${o.order_id}`}>
             <div className="page-head" style={{ marginBottom: 8 }}>
               <h3 id={`o-${o.order_id}`} style={{ margin: 0, fontSize: "1.0625rem" }}>
-                <Link href={`/beheer/orders/${o.order_id}`}>{o.number}</Link> <span className="badge">{o.channel === "bol" ? "bol" : "web"}</span>{" "}
+                {orderRef(o.order_id, o.number)} <span className="badge">{o.channel === "bol" ? "bol" : "web"}</span>{" "}
                 {o.shipment_status ? <Status value={o.shipment_status} /> : <Status value="unfulfilled" />}
               </h3>
               <span className="small muted">{o.customer_name} · {o.postal_code} {o.city}{o.ship_deadline ? ` · uiterlijk ${dateTime(o.ship_deadline)}` : ""}</span>
@@ -156,7 +160,7 @@ export default async function ShipmentsPage({ searchParams }: PageProps<"/beheer
           <tbody>
             {v.day.length === 0 ? <tr><td colSpan={6} className="muted">Geen zendingen op deze dag.</td></tr> : v.day.map((d) => (
               <tr key={d.shipment_id}>
-                <td><Link href={`/beheer/orders/${d.order_id}`}>{d.number}</Link> <span className="badge">{d.channel}</span></td>
+                <td>{orderRef(d.order_id, d.number)} <span className="badge">{d.channel}</span></td>
                 <td>{CARRIER_LABEL[d.carrier]}</td>
                 <td><Status value={d.status} /></td>
                 <td>{d.tracking_code ?? "–"}</td>
@@ -175,7 +179,7 @@ export default async function ShipmentsPage({ searchParams }: PageProps<"/beheer
           <tbody>
             {v.recent.length === 0 ? <tr><td colSpan={6} className="muted">Nog niets verzonden.</td></tr> : v.recent.map((r) => (
               <tr key={r.shipment_id}>
-                <td><Link href={`/beheer/orders/${r.order_id}`}>{r.number}</Link></td>
+                <td>{orderRef(r.order_id, r.number)}</td>
                 <td>{CARRIER_LABEL[r.carrier]}</td>
                 <td><Status value={r.status} /></td>
                 <td>{r.tracking_code ?? "–"}</td>

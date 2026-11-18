@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { randomUUID } from "node:crypto";
 import { Flash, Status } from "../../_components/ui";
 import { CARRIER_LABEL, dateTime, money } from "@/lib/format";
+import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 import { cancelOrderAction, createReturnAction, decideReturnAction, refundAction, resendEmailAction, retryStockAction, updateAddressAction } from "../actions";
 
@@ -28,6 +29,7 @@ type Order = {
 };
 
 export default async function OrderPage({ params, searchParams }: PageProps<"/beheer/orders/[id]">) {
+  await requireAdminPage(ROLES.orders);
   await connection();
   const { id } = await params;
   const sp = await searchParams;

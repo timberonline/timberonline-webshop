@@ -94,7 +94,7 @@ export async function updateAddressAction(fd: FormData) {
   const id = str(fd, "order_id");
   let msg: { ok?: string; fout?: string };
   try {
-    const s = await requireAdmin(ROLES.shipping);
+    const s = await requireAdmin(ROLES.orders); // adresformulier staat alleen op de orderpagina (eigenaar/beheerder)
     const res = await getCtx().db.rpc<{ ok: boolean; message?: string; error?: string }>("api_order_update_address", {
       actor: s.actor,
       order_id: id,

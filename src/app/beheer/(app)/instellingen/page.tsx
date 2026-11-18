@@ -8,7 +8,7 @@ import type { ShippingOption } from "@/server/services/types";
 import { saveAdminAction, saveSettingsAction } from "./actions";
 
 type Settings = {
-  bol_buffer_units: number; reservation_minutes: number; delivery_promise: string; tracking_info: string; bol_requires_tracking: boolean;
+  bol_buffer_units: number; reservation_minutes: number; delivery_promise: string; tracking_info: string; bol_requires_tracking: boolean; letter_max_weight_g?: number;
   shipping_options: ShippingOption[]; sender_address: { name?: string; street?: string | null; house_number?: string | null; postal_code?: string | null; city?: string | null };
 };
 const euro = (c: number | null | undefined) => (c == null ? "" : (c / 100).toFixed(2).replace(".", ","));
@@ -32,6 +32,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/beheer/
             <div className="field"><label htmlFor="bol_buffer_units">bol-buffer (verkoopbare eenheden per SKU voor de webshop)</label><input id="bol_buffer_units" name="bol_buffer_units" type="number" min={0} max={20} defaultValue={st.bol_buffer_units} /></div>
             <div className="field"><label htmlFor="reservation_minutes">Reservering tijdens betalen (minuten)</label><input id="reservation_minutes" name="reservation_minutes" type="number" min={31} max={120} defaultValue={st.reservation_minutes} /></div>
             <label className="check"><input type="checkbox" name="bol_requires_tracking" defaultChecked={st.bol_requires_tracking} /> bol-orders altijd met track & trace</label>
+            <div className="field"><label htmlFor="letter_max_weight_g">Briefpost tot (gram verpakt)</label><input id="letter_max_weight_g" name="letter_max_weight_g" type="number" min={20} max={2000} defaultValue={st.letter_max_weight_g ?? 250} aria-describedby="letter_max_hint" /><span id="letter_max_hint" className="small muted">Zwaardere orders of pakketformaat krijgen geen briefpost-voorstel.</span></div>
           </div>
         </section>
         <section className="card">

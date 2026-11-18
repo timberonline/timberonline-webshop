@@ -23,6 +23,26 @@ export interface BolDriver {
   readOffer(ref: BolOfferRef): Promise<{ stock: number | null; priceCents: number | null } | null>;
 }
 
+/**
+ * Fout van de bol-API. `permanent` = opnieuw proberen heeft geen zin (bv. 400/404/422 of ontbrekende offerId);
+ * zulke updates worden in de wachtrij direct als mislukt getoond in plaats van vijf keer herhaald.
+ */
+export class BolApiError extends Error {
+  constructor(
+    message: string,
+    readonly permanent: boolean,
+    readonly httpStatus?: number,
+  ) {
+    super(message);
+    this.name = "BolApiError";
+  }
+}
+
+/** 401 (token verlopen), 408, 409, 425, 429 en 5xx zijn herstelbaar; overige 4xx zijn definitief. */
+export function isPermanentHttpStatus(status: number) {
+  return status >= 400 && status < 500 && ![401, 408, 409, 425, 429].includes(status);
+}
+
 export function offerKey(ref: BolOfferRef) {
   return ref.offerId ?? (ref.reference ? `ref:${ref.reference}` : `ean:${ref.ean}`);
 }
@@ -33,14 +53,18 @@ export function offerKey(ref: BolOfferRef) {
  */
 export function createSimulatedBol(
   db: Db,
-  faults: { failNext?: number; delayMs?: number; submitted?: boolean } = {},
+  faults: { failNext?: number; delayMs?: number; submitted?: boolean; permanentNext?: number } = {},
 ): BolDriver & { faults: typeof faults; shipments: unknown[] } {
   const shipments: unknown[] = [];
   const maybeFail = async () => {
     if (faults.delayMs) await new Promise((r) => setTimeout(r, faults.delayMs));
+    if (faults.permanentNext && faults.permanentNext > 0) {
+      faults.permanentNext -= 1;
+      throw new BolApiError("Gesimuleerde bol-fout (HTTP 422): ongeldig aanbod", true, 422);
+    }
     if (faults.failNext && faults.failNext > 0) {
       faults.failNext -= 1;
-      throw new Error("Gesimuleerde bol-fout (HTTP 503)");
+      throw new BolApiError("Gesimuleerde bol-fout (HTTP 503)", false, 503);
     }
   };
   return {
@@ -97,7 +121,7 @@ export function createLiveBol(opts: { clientId: string; clientSecret: string; fe
       method: "POST",
       headers: { Authorization: `Basic ${basic}`, Accept: "application/json" },
     });
-    if (!res.ok) throw new Error(`bol-authenticatie mislukt (HTTP ${res.status})`);
+    if (!res.ok) throw new BolApiError(`bol-authenticatie mislukt (HTTP ${res.status})`, false, res.status);
     const json = (await res.json()) as { access_token: string; expires_in: number };
     token = { value: json.access_token, exp: Date.now() + json.expires_in * 1000 };
     return token.value;
@@ -108,7 +132,14 @@ export function createLiveBol(opts: { clientId: string; clientSecret: string; fe
       headers: { Authorization: `Bearer ${await auth()}`, Accept: V10, ...(body ? { "Content-Type": V10 } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) throw new Error(`bol ${method} ${path} mislukt (HTTP ${res.status}): ${(await res.text()).slice(0, 300)}`);
+    if (!res.ok) {
+      if (res.status === 401) token = null; // token ingetrokken of verlopen: volgende poging haalt een nieuw token
+      throw new BolApiError(
+        `bol ${method} ${path} mislukt (HTTP ${res.status}): ${(await res.text()).slice(0, 300)}`,
+        isPermanentHttpStatus(res.status),
+        res.status,
+      );
+    }
     return res.status === 204 ? null : res.json();
   }
   const submitted = (json: unknown): BolPushResult => {
@@ -116,7 +147,7 @@ export function createLiveBol(opts: { clientId: string; clientSecret: string; fe
     return id ? { status: "submitted", processId: String(id) } : { status: "done" };
   };
   const requireOffer = (ref: BolOfferRef) => {
-    if (!ref.offerId) throw new Error("bol-offerId ontbreekt voor dit artikel");
+    if (!ref.offerId) throw new BolApiError("bol-offerId ontbreekt voor dit artikel", true);
     return encodeURIComponent(ref.offerId);
   };
   return {
@@ -146,9 +177,16 @@ export function createLiveBol(opts: { clientId: string; clientSecret: string; fe
       );
     },
     async fetchOpenOrders() {
-      const list = (await call("GET", "/retailer/orders?fulfilment-method=FBR&status=OPEN")) as { orders?: { orderId: string }[] } | null;
+      // bol levert open orders per pagina (max. 50); alle pagina's ophalen, met een harde bovengrens
+      const ids: string[] = [];
+      for (let page = 1; page <= 20; page++) {
+        const list = (await call("GET", `/retailer/orders?fulfilment-method=FBR&status=OPEN&page=${page}`)) as { orders?: { orderId: string }[] } | null;
+        const batch = list?.orders ?? [];
+        ids.push(...batch.map((o) => o.orderId));
+        if (batch.length < 50) break;
+      }
       const out: BolOrder[] = [];
-      for (const o of list?.orders ?? []) {
+      for (const o of [...new Set(ids)].map((orderId) => ({ orderId }))) {
         const d = (await call("GET", `/retailer/orders/${encodeURIComponent(o.orderId)}`)) as {
           orderId: string;
           orderPlacedDateTime: string;
@@ -187,7 +225,7 @@ export function createLiveBol(opts: { clientId: string; clientSecret: string; fe
         headers: { Authorization: `Bearer ${await auth()}`, Accept: V10 },
       });
       if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`bol GET offer mislukt (HTTP ${res.status})`);
+      if (!res.ok) throw new BolApiError(`bol GET offer mislukt (HTTP ${res.status})`, isPermanentHttpStatus(res.status), res.status);
       const json = (await res.json()) as { stock?: { amount?: number }; pricing?: { bundlePrices?: { quantity: number; unitPrice: number }[] } };
       const unit = json.pricing?.bundlePrices?.find((b) => b.quantity === 1)?.unitPrice;
       return { stock: json.stock?.amount ?? null, priceCents: unit != null ? Math.round(unit * 100) : null };

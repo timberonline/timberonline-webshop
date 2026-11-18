@@ -21,6 +21,9 @@ export async function saveSettingsAction(fd: FormData) {
     await save("delivery_promise", str(fd, "delivery_promise"));
     await save("tracking_info", str(fd, "tracking_info"));
     await save("bol_requires_tracking", fd.get("bol_requires_tracking") === "on");
+    const letterMax = Number(str(fd, "letter_max_weight_g"));
+    if (!Number.isInteger(letterMax) || letterMax < 20 || letterMax > 2000) throw new Error("Gewichtsgrens briefpost moet tussen 20 en 2000 gram liggen");
+    await save("letter_max_weight_g", letterMax);
     await save("sender_address", {
       name: str(fd, "s_name") || "Timber Online",
       street: str(fd, "s_street") || null,

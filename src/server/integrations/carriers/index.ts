@@ -69,3 +69,22 @@ export function createLiveCarriers(): CarrierDriver {
     },
   };
 }
+
+/**
+ * Kiest per vervoerder de live of gesimuleerde koppeling, zodat DHL en PostNL los van elkaar te activeren zijn
+ * (DHL_MODE / POSTNL_MODE). Briefpost is altijd een adreslabel.
+ */
+export function createCarrierRouter(modes: { dhl: "simulated" | "live"; postnl: "simulated" | "live" }): CarrierDriver & {
+  modes: typeof modes;
+} {
+  const sim = createSimulatedCarriers();
+  const live = createLiveCarriers();
+  return {
+    mode: modes.dhl === "live" || modes.postnl === "live" ? "live" : "simulated",
+    modes,
+    async createLabel(req) {
+      if (req.carrier === "letter") return letterLabel(req);
+      return (modes[req.carrier] === "live" ? live : sim).createLabel(req);
+    },
+  };
+}

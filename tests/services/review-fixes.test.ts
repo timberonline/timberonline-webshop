@@ -1,7 +1,7 @@
 /** Regressietests voor de bevindingen uit Codex-reviewronde 1. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { testCtx } from "../helpers/ctx";
-import { componentOnHand, freshDb, productId, q, type TestDb } from "../helpers/db";
+import { componentOnHand, freshDb, productId, q, type TestDb, activateSeedBundles } from "../helpers/db";
 import { importBolOrder, processOutbox } from "@/server/services/bol-sync";
 import { confirmHandover, prepareShipment } from "@/server/services/shipping";
 import { sendOrderEmail } from "@/server/services/email";
@@ -16,6 +16,7 @@ let comp15: string;
 
 beforeAll(async () => {
   t = await freshDb();
+  await activateSeedBundles(t);
   ip15 = await productId(t.pool, "TO-SP2-IP15-PRV");
   comp15 = (await q<{ id: string }>(t.pool, "select id from components where code = 'C-SP-IP15-PRV'"))[0].id;
   await t.db.rpc("api_product_save", { actor: ACTOR, id: ip15, bol_enabled: true, bol_offer_id: "rf-ip15" });

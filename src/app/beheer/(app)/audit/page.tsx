@@ -1,10 +1,12 @@
 import { connection } from "next/server";
 import { dateTime } from "@/lib/format";
+import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 
 type Row = { id: number; at: string; actor: string; action: string; entity: string; entity_id: string | null; before: unknown; after: unknown };
 
 export default async function AuditPage({ searchParams }: PageProps<"/beheer/audit">) {
+  await requireAdminPage(ROLES.audit);
   await connection();
   const sp = await searchParams;
   const entity = typeof sp.entity === "string" && sp.entity ? sp.entity : undefined;

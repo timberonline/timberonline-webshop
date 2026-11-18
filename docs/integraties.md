@@ -4,12 +4,13 @@ Standaard staat alles in testmodus. Echte bestellingen pas openen nadat ondersta
 
 | Koppeling | Testmodus | Live zetten |
 |---|---|---|
-| **Stripe Checkout** | `sk_test_…`; testkaarten en iDEAL-test. Webhook `POST /api/webhooks/stripe` met events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`. | Bevestig welke methoden het account ondersteunt (iDEAL \| Wero, achterafbetalen zoals Klarna). Zet ze aan in het Stripe-dashboard, optioneel filter via `STRIPE_PAYMENT_METHOD_TYPES`. Daarna `STRIPE_LIVE_ENABLED=true` en live sleutels + live webhook. |
+| **Stripe Checkout** | `sk_test_…`; testkaarten en iDEAL-test. Webhook `POST /api/webhooks/stripe` met events `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `checkout.session.expired`, `charge.refunded`, `refund.created`, `refund.updated`, `refund.failed`, `charge.refund.updated`. Een terugbetaling die Stripe als *pending* meldt, staat als **In behandeling** en telt pas mee als terugbetaald na `succeeded`. | Bevestig welke methoden het account ondersteunt (iDEAL \| Wero, achterafbetalen zoals Klarna). Zet ze aan in het Stripe-dashboard, optioneel filter via `STRIPE_PAYMENT_METHOD_TYPES`. Daarna `STRIPE_LIVE_ENABLED=true` en live sleutels + live webhook. |
 | **Resend** | `MAIL_MODE=simulated` of `resend` met `MAIL_TEST_RECIPIENT` (alle mail naar één gecontroleerd adres). | Afzenderdomein verifiëren (DNS-records van Resend), `MAIL_TEST_RECIPIENT` leegmaken. |
 | **bol** | `BOL_MODE=simulated`: updates gaan naar `bol_sim_offers`; bol-orders simuleren in beheer. | Retailer API-sleutels (`BOL_CLIENT_ID/SECRET`), per artikel `bol-offerId` invullen, beginstanden en titels controleren (o.a. hoesje EAN 9509916568396 → iPhone 13 Pro), artikel per artikel activeren, `BOL_MODE=live`. Transportercodes (DHL → `DHLFORYOU`, PostNL → `TNT`, briefpost → `BRIEFPOST`) bij livegang verifiëren. |
-| **DHL / PostNL** | Voorbeeldlabels (A6-PDF, gemarkeerd als niet geldig) en gesimuleerde tracking; scans simuleren in Verzendingen. | Zakelijke accounts/API-sleutels; live labelaanvraag implementeren in `src/server/integrations/carriers` (interface staat klaar). Afgiftepuntoptie testen met de gekozen zakelijke DHL-dienst. |
+| **DHL / PostNL** | Voorbeeldlabels (A6-PDF, gemarkeerd als niet geldig) en gesimuleerde tracking; scans simuleren in Verzendingen. Per vervoerder apart te schakelen: `DHL_MODE`, `POSTNL_MODE` (vallen terug op `CARRIER_MODE`). Het verzendvoorstel houdt rekening met verpakt gewicht en formaat (briefpostgrens instelbaar, standaard 250 g) en sluit briefpost uit voor bol-orders met trackingplicht. | Zakelijke accounts/API-sleutels; live labelaanvraag implementeren in `src/server/integrations/carriers` (interface staat klaar). Afgiftepuntoptie testen met de gekozen zakelijke DHL-dienst. |
 | **Briefpost** | Volledig werkend: adreslabel, handmatig frankeren, bevestigen na posten. | Verzendoptie "Briefpost" aanzetten in Instellingen en prijs bepalen. |
 | **AI-prijsassistent** | Regelgebaseerde testimplementatie (geen kosten). | Na akkoord over provider en budget: `AI_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL`. Voorstellen blijven altijd bevestiging vereisen. |
+| **Onderhoud (cron)** | Vercel Hobby: dagelijks via `vercel.json`. | GitHub Actions `Onderhoud` roept `/api/cron/tick` elke 10 minuten aan zodra repository-variabele `APP_URL` en secret `CRON_SECRET` zijn gezet (gratis voor publieke repo's). Vóór bol-livegang activeren. |
 | **Beheerlogin** | Supabase Auth, MFA verplicht. Inschrijving bij eerste login. | Publieke registratie uit, site-URL en redirect-URL's (`/beheer/auth/callback`) instellen. |
 
 ## Checklist vóór echte bestellingen
@@ -22,3 +23,11 @@ Standaard staat alles in testmodus. Echte bestellingen pas openen nadat ondersta
 6. Herstel getest (back-up terugzetten in een testproject).
 7. Eventuele nieuwe kosten (Vercel Pro voor commercieel gebruik, Supabase-abonnement, AI) akkoord.
 8. `NEXT_PUBLIC_SHOP_MODE=live` om de testbalk te verwijderen.
+
+## Omgevingsvariabelen Supabase
+
+De app herkent zowel de klassieke namen (`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) als de namen die de Supabase-integratie van Vercel zet (`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `SUPABASE_URL`).
+
+## Contactformulier
+
+`CONTACT_TO` (ontvanger, valt terug op `MAIL_REPLY_TO`) en `NEXT_PUBLIC_CONTACT_EMAIL` (zichtbaar contactadres). Zonder ontvanger valideert het formulier wel maar meldt het dat het nog niet actief is.

@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { connection } from "next/server";
 import { getDb } from "../db";
 import { productImageUrl } from "../storage";
@@ -9,6 +10,9 @@ export async function loadCatalog(): Promise<Catalog> {
   const cat = await getDb().rpc<Catalog>("api_catalog", {});
   return { ...cat, products: cat.products.map((p) => ({ ...p, image_path: productImageUrl(p.image_path) })) };
 }
+
+/** Eén cataloguslading per request, gedeeld door generateMetadata en de pagina. */
+export const getCatalog = cache(loadCatalog);
 
 export type CatalogFilter = { q?: string; toestel?: string; type?: string };
 

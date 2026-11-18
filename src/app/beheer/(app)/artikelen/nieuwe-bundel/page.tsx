@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { Flash } from "../../_components/ui";
+import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 import { ProductForm } from "../product-form";
 
 export default async function NewBundle({ searchParams }: PageProps<"/beheer/artikelen/nieuwe-bundel">) {
+  await requireAdminPage(ROLES.catalog);
   await connection();
   const sp = await searchParams;
   const db = getDb();

@@ -1,23 +1,58 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AddToCart } from "@/components/add-to-cart";
+import { Breadcrumbs, type Crumb } from "@/components/breadcrumbs";
+import { categoryByType, categoryPath } from "@/components/categories";
 import { ProductVisual } from "@/components/product-visual";
+import { clampDescription, OG_DEFAULTS } from "@/components/seo";
 import { money, TYPE_LABEL } from "@/lib/format";
-import { loadCatalog } from "@/server/queries/catalog";
+import { getCatalog } from "@/server/queries/catalog";
+
+async function findProduct(slug: string) {
+  const catalog = await getCatalog();
+  const p = catalog.products.find((x) => x.slug === slug);
+  if (!p) notFound();
+  return { catalog, p };
+}
+
+export async function generateMetadata({ params }: PageProps<"/product/[slug]">): Promise<Metadata> {
+  const { slug } = await params;
+  const { p } = await findProduct(slug);
+  const sentence = (t: string) => (/[.!?]$/.test(t.trim()) ? t.trim() : `${t.trim()}.`);
+  const lead = p.subtitle ?? TYPE_LABEL[p.product_type] ?? p.title;
+  const devices = p.devices.map((d) => d.name).join(", ");
+  const description = clampDescription(
+    [sentence(lead), devices && !/past op/i.test(lead) ? `Past op ${devices}.` : "", `${money(p.price_cents)}.`, p.description ?? ""]
+      .filter(Boolean)
+      .join(" "),
+  );
+  const path = `/product/${p.slug}`;
+  return {
+    title: p.title,
+    description,
+    alternates: { canonical: path },
+    openGraph: {
+      ...OG_DEFAULTS,
+      title: p.title,
+      description,
+      url: path,
+      ...(p.image_path ? { images: [{ url: p.image_path, alt: p.title }] } : {}),
+    },
+  };
+}
 
 export default async function ProductPage({ params }: PageProps<"/product/[slug]">) {
   const { slug } = await params;
-  const catalog = await loadCatalog();
-  const p = catalog.products.find((x) => x.slug === slug);
-  if (!p) notFound();
+  const { catalog, p } = await findProduct(slug);
+  const category = categoryByType(p.product_type);
+  const crumbs: Crumb[] = [{ label: "Home", href: "/" }, ...(category ? [{ label: category.name, href: categoryPath(category) }] : []), { label: p.title }];
   const related = catalog.products.filter((x) => x.id !== p.id && x.devices.some((d) => p.devices.some((pd) => pd.slug === d.slug)));
   const opt = catalog.settings.shipping_options.find((o) => o.enabled) ?? null;
 
   return (
     <div className="container">
-      <nav aria-label="Kruimelpad" className="small" style={{ marginTop: 16 }}>
-        <Link href="/">Alle producten</Link> <span aria-hidden="true">›</span> <span>{p.title}</span>
-      </nav>
+      <Breadcrumbs items={crumbs} />
       <div className="detail">
         <div className="visual">
           <ProductVisual type={p.product_type} imageUrl={p.image_path} size={260} alt={`Illustratie ${p.title}`} />

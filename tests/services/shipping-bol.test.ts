@@ -3,7 +3,7 @@ import path from "node:path";
 import { PDFDocument } from "pdf-lib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { testCtx } from "../helpers/ctx";
-import { componentOnHand, freshDb, productId, q, type TestDb } from "../helpers/db";
+import { componentOnHand, freshDb, productId, q, type TestDb, activateSeedBundles } from "../helpers/db";
 import { applyCarrierEvent, confirmHandover, createLabel, dayPdf, labelPdf, prepareShipment, uploadLabel } from "@/server/services/shipping";
 import { importBolOrder, processBolQueue, processOutbox, reconcileBol } from "@/server/services/bol-sync";
 import { renderLabel } from "@/server/pdf/labels";
@@ -38,6 +38,7 @@ function files(dir: string) {
 
 beforeAll(async () => {
   t = await freshDb();
+  await activateSeedBundles(t);
   ip15 = await productId(t.pool, "TO-SP2-IP15-PRV");
   ip12pm = await productId(t.pool, "TO-SP2-IP12PM-PRV");
   comp12pm = (await q<{ id: string }>(t.pool, "select id from components where code = 'C-SP-IP12PM-PRV'"))[0].id;

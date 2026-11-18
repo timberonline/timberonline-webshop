@@ -3,12 +3,14 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { Flash, Status } from "../../_components/ui";
 import { money } from "@/lib/format";
+import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 import { productImageUrl } from "@/server/storage";
 import { setPriceAction } from "../actions";
 import { ProductForm, type ProductFull } from "../product-form";
 
 export default async function ProductEdit({ params, searchParams }: PageProps<"/beheer/artikelen/[id]">) {
+  await requireAdminPage(ROLES.catalog);
   await connection();
   const { id } = await params;
   const sp = await searchParams;

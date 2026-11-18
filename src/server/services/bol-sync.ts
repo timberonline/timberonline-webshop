@@ -1,5 +1,7 @@
 import type { Ctx } from "./context";
-import type { BolOrder } from "../integrations/bol";
+import { BolApiError, type BolOrder } from "../integrations/bol";
+
+const isPermanent = (e: unknown) => e instanceof BolApiError && e.permanent;
 
 type ClaimItem = {
   product_id: string;
@@ -43,7 +45,8 @@ export async function processBolQueue(ctx: Ctx, opts: { limit?: number } = {}) {
         const r = it.kind === "stock" ? await ctx.bol.updateStock(ref, it.value) : await ctx.bol.updatePrice(ref, it.value);
         payload = r.status === "done" ? { result: "done" } : { result: "submitted", process_id: r.processId };
       } catch (e) {
-        payload = { result: "error", error: (e as Error).message };
+        // definitieve fouten (bv. ontbrekende offerId, 404/422) niet herhalen maar direct als mislukt tonen
+        payload = { result: "error", error: (e as Error).message, permanent: isPermanent(e) };
       }
     }
     await ctx.db.rpc("api_bol_sync_complete", { product_id: it.product_id, kind: it.kind, token: it.token, ...payload });
@@ -119,13 +122,21 @@ export async function reconcileBol(ctx: Ctx) {
   for (const p of bol.sync.filter((x) => x.bol_enabled)) {
     try {
       const o = await ctx.bol.readOffer({ offerId: p.bol_offer_id, reference: p.bol_reference, ean: p.ean });
-      items.push({ product_id: p.product_id, kind: "stock", remote_value: o?.stock ?? null });
-      items.push({ product_id: p.product_id, kind: "price", remote_value: o?.priceCents ?? null });
+      if (!o) {
+        // aanbod bestaat niet bij bol: zichtbaar maken, niet eindeloos opnieuw inplannen
+        items.push({ product_id: p.product_id, kind: "stock", missing: true });
+        items.push({ product_id: p.product_id, kind: "price", missing: true });
+        continue;
+      }
+      items.push({ product_id: p.product_id, kind: "stock", remote_value: o.stock ?? null });
+      items.push({ product_id: p.product_id, kind: "price", remote_value: o.priceCents ?? null });
     } catch (e) {
       // één defect aanbod mag de controle van de andere niet blokkeren
       errors.push({ sku: p.sku, error: (e as Error).message });
     }
   }
-  const res = items.length ? await ctx.db.rpc<{ differences: number }>("api_bol_record_remote", { items }) : { differences: 0 };
-  return { differences: res.differences, errors };
+  const res = items.length
+    ? await ctx.db.rpc<{ differences: number; missing: number }>("api_bol_record_remote", { items })
+    : { differences: 0, missing: 0 };
+  return { differences: res.differences, missing: res.missing ?? 0, errors };
 }

@@ -2,20 +2,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const ITEMS = [
-  { href: "/beheer", label: "Overzicht" },
-  { href: "/beheer/orders", label: "Orders" },
-  { href: "/beheer/verzendingen", label: "Verzendingen" },
-  { href: "/beheer/artikelen", label: "Artikelen en prijzen" },
-  { href: "/beheer/voorraad", label: "Voorraad" },
-  { href: "/beheer/acties", label: "Acties" },
-  { href: "/beheer/bol", label: "bol-koppeling" },
-  { href: "/beheer/prijsassistent", label: "Prijsassistent" },
-  { href: "/beheer/audit", label: "Logboek" },
-  { href: "/beheer/instellingen", label: "Instellingen" },
-];
-
-export function AdminNav({ who, role, devBypass }: { who: string; role: string; devBypass: boolean }) {
+/** Toont alleen de onderdelen die de rol mag openen; de lijst wordt server-side gefilterd (zie _sections.ts). */
+export function AdminNav({ items, who, role, devBypass }: { items: { href: string; label: string }[]; who: string; role: string; devBypass: boolean }) {
   const path = usePathname();
   return (
     <nav className="admin-nav" aria-label="Beheer">
@@ -24,7 +12,7 @@ export function AdminNav({ who, role, devBypass }: { who: string; role: string; 
         <img src="/brand/compact-dark.svg" alt="Timber Online beheer" width="136" height="30" />
       </div>
       <ul>
-        {ITEMS.map((i) => {
+        {items.map((i) => {
           const current = i.href === "/beheer" ? path === "/beheer" : path.startsWith(i.href);
           return (
             <li key={i.href}>

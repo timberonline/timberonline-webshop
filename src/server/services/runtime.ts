@@ -4,7 +4,7 @@ import { getDb } from "../db";
 import { getStorage } from "../storage";
 import { createResendMail, createSimulatedMail } from "../integrations/mail";
 import { createLiveBol, createSimulatedBol } from "../integrations/bol";
-import { createLiveCarriers, createSimulatedCarriers } from "../integrations/carriers";
+import { createCarrierRouter } from "../integrations/carriers";
 import { createStripe, type Ctx } from "./context";
 
 let ctx: Ctx | undefined;
@@ -25,7 +25,7 @@ export function getCtx(): Ctx {
     storage: getStorage(),
     mail,
     bol,
-    carriers: env.carrierMode() === "live" ? createLiveCarriers() : createSimulatedCarriers(),
+    carriers: createCarrierRouter({ dhl: env.dhlMode(), postnl: env.postnlMode() }),
     stripe: createStripe(env.stripeSecretKey(), env.stripeLiveEnabled()),
     appUrl: env.appUrl(),
   };
@@ -40,7 +40,7 @@ export function integrationStatus() {
     stripe: !key ? "niet geconfigureerd" : /^(sk|rk)_test_/.test(key) ? "testmodus" : env.stripeLiveEnabled() ? "LIVE" : "live sleutel geweigerd",
     mail: env.mailMode() === "resend" && env.resendApiKey() ? (env.mailTestRecipient() ? "Resend (testontvanger)" : "Resend") : "gesimuleerd",
     bol: env.bolMode() === "live" && env.bolClientId() ? "live" : "gesimuleerd",
-    carriers: env.carrierMode() === "live" ? "live (DHL/PostNL nog niet geactiveerd)" : "gesimuleerd (voorbeeldlabels)",
+    carriers: `DHL ${env.dhlMode() === "live" ? "live (nog niet geïmplementeerd)" : "gesimuleerd"} · PostNL ${env.postnlMode() === "live" ? "live (nog niet geïmplementeerd)" : "gesimuleerd"} · briefpost adreslabel`,
     ai: env.aiProvider() === "openai" && env.openaiApiKey() ? `OpenAI (${env.openaiModel()})` : "testimplementatie (regelgebaseerd)",
   };
 }

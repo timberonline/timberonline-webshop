@@ -11,21 +11,33 @@ export async function refundOrder(ctx: Ctx, actor: string, orderId: string, amou
   if (!begin.ok) return begin;
   if (begin.duplicate) return { ok: true, duplicate: true };
   if (!ctx.stripe) {
-    await ctx.db.rpc("api_refund_finish", { refund_id: begin.refund_id, ok: false, error: "Stripe niet geconfigureerd" });
+    await ctx.db.rpc("api_refund_finish", { refund_id: begin.refund_id, status: "failed", error: "Stripe niet geconfigureerd" });
     return { ok: false, error: "stripe_unavailable", message: "Stripe is niet geconfigureerd" };
   }
   try {
     const refund = await ctx.stripe.refunds.create(
-      { payment_intent: begin.payment_intent_id, amount: amountCents, metadata: { order_id: orderId } },
+      { payment_intent: begin.payment_intent_id, amount: amountCents, metadata: { order_id: orderId, refund_id: begin.refund_id } },
       { idempotencyKey: `refund:${key}` },
     );
-    const ok = refund.status === "succeeded" || refund.status === "pending";
-    await ctx.db.rpc("api_refund_finish", { refund_id: begin.refund_id, ok, provider_refund_id: refund.id, error: ok ? null : refund.status });
-    return { ok, status: refund.status };
+    const status = refundStatus(refund.status);
+    await ctx.db.rpc("api_refund_finish", {
+      refund_id: begin.refund_id,
+      status,
+      provider_refund_id: refund.id,
+      error: status === "failed" ? (refund.failure_reason ?? refund.status) : null,
+    });
+    return { ok: status !== "failed", status };
   } catch (e) {
-    await ctx.db.rpc("api_refund_finish", { refund_id: begin.refund_id, ok: false, error: (e as Error).message });
+    await ctx.db.rpc("api_refund_finish", { refund_id: begin.refund_id, status: "failed", error: (e as Error).message });
     return { ok: false, error: "stripe_error", message: (e as Error).message };
   }
+}
+
+/** Stripe-refundstatus → eigen status. Alleen "succeeded" is definitief terugbetaald. */
+export function refundStatus(s: string | null | undefined): "succeeded" | "processing" | "failed" {
+  if (s === "succeeded") return "succeeded";
+  if (s === "failed" || s === "canceled") return "failed";
+  return "processing"; // pending, requires_action
 }
 
 export async function cancelOrder(ctx: Ctx, actor: string, orderId: string, refund: boolean) {

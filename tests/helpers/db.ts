@@ -39,3 +39,13 @@ export async function componentOnHand(pool: Pool, code: string) {
   );
   return rows[0];
 }
+
+/**
+ * De seed zet bundels als concept (voorgestelde prijs). Tests die bundels verkopen activeren ze eerst,
+ * zoals de beheerder dat na het bevestigen van de bundelprijs doet (via dezelfde gecontroleerde functie).
+ */
+export async function activateSeedBundles(t: Pick<TestDb, "pool" | "db">, actor = "test:admin") {
+  for (const sku of ["TO-BND-IP14-CS-SP2", "TO-BND-IP14-CS-SP1"]) {
+    await t.db.rpc("api_product_save", { actor, id: await productId(t.pool, sku), status: "active" });
+  }
+}

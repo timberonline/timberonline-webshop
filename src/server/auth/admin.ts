@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { getDb } from "../db";
@@ -19,8 +20,9 @@ export class ForbiddenError extends Error {
 /**
  * Stelt vast wie de beheerder is. Vereist: geldige Supabase-sessie, MFA (aal2) en een actieve rij in admin_users.
  * Retourneert null als de gebruiker niet is ingelogd of nog MFA moet doen (status geeft aan welke).
+ * Met React `cache` gedeeld binnen één render (layout + pagina); server actions en route handlers controleren elke aanroep opnieuw.
  */
-export async function getAdminSession(): Promise<{ status: "ok"; session: AdminSession } | { status: "login" | "mfa" | "forbidden" | "unconfigured" }> {
+export const getAdminSession = cache(async function getAdminSession(): Promise<{ status: "ok"; session: AdminSession } | { status: "login" | "mfa" | "forbidden" | "unconfigured" }> {
   await connection(); // beheer is altijd per verzoek; nooit statisch voorgerenderd
   if (env.adminDevBypass()) {
     return { status: "ok", session: { userId: "00000000-0000-0000-0000-000000000000", email: "lokaal@dev", role: "owner", actor: "admin:lokaal-dev", devBypass: true } };
@@ -34,7 +36,7 @@ export async function getAdminSession(): Promise<{ status: "ok"; session: AdminS
   const admin = await getDb().rpc<{ user_id: string; email: string; role: Role } | null>("api_admin_lookup", { user_id: userData.user.id });
   if (!admin) return { status: "forbidden" };
   return { status: "ok", session: { userId: admin.user_id, email: admin.email, role: admin.role, actor: `admin:${admin.email}`, devBypass: false } };
-}
+});
 
 /** Voor pagina's: stuurt door naar login/MFA of toont geen toegang. */
 export async function requireAdminPage(roles?: Role[]): Promise<AdminSession> {
@@ -54,9 +56,18 @@ export async function requireAdmin(roles?: Role[]): Promise<AdminSession> {
   return res.session;
 }
 
+/** Rollen per beheeronderdeel. Elke page.tsx, server action en route handler kiest hier expliciet een set uit. */
 export const ROLES = {
   catalog: ["owner", "admin"] as Role[],
   orders: ["owner", "admin"] as Role[],
+  audit: ["owner", "admin"] as Role[],
   shipping: ["owner", "admin", "fulfilment"] as Role[],
   settings: ["owner"] as Role[],
 };
+
+export type AdminArea = keyof typeof ROLES;
+
+/** Mag deze rol dit beheeronderdeel openen? Alleen voor weergave (menu, links); afdwingen gebeurt met requireAdminPage/requireAdmin. */
+export function mayAccess(role: Role, area: AdminArea): boolean {
+  return ROLES[area].includes(role);
+}

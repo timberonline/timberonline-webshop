@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { Flash } from "../_components/ui";
 import { dateTime } from "@/lib/format";
+import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 import { correctStockAction } from "./actions";
 
@@ -12,6 +13,7 @@ type Data = {
 const REASON: Record<string, string> = { opening: "Openingstelling", sale_web: "Verkoop webshop", sale_bol: "Verkoop bol", correction: "Correctie", return_restock: "Retour terug", cancel_restock: "Annulering terug" };
 
 export default async function StockPage({ searchParams }: PageProps<"/beheer/voorraad">) {
+  await requireAdminPage(ROLES.catalog);
   await connection();
   const sp = await searchParams;
   const d = await getDb().rpc<Data>("api_admin_components", { limit: 100 });

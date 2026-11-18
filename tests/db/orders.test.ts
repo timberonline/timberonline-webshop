@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { componentOnHand, freshDb, productId, q, type TestDb } from "../helpers/db";
+import { componentOnHand, freshDb, productId, q, type TestDb, activateSeedBundles } from "../helpers/db";
 
 type CreateRes = {
   ok: boolean;
@@ -32,6 +32,7 @@ async function pay(orderId: string, extra: Record<string, unknown> = {}) {
 
 beforeAll(async () => {
   t = await freshDb();
+  await activateSeedBundles(t);
   for (const sku of [
     "TO-SP2-IP14-STD",
     "TO-CS-IP14-MS",

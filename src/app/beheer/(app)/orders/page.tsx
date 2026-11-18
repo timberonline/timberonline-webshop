@@ -2,11 +2,13 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Flash, Status } from "../_components/ui";
 import { dateTime, money } from "@/lib/format";
+import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 
 type Row = { id: string; number: string; channel: string; payment_status: string; stock_status: string; fulfillment_status: string; customer_name: string | null; email: string | null; total_cents: number; created_at: string; needs_attention: boolean; attention_reason: string | null; mail_problem: boolean; items: number };
 
 export default async function OrdersPage({ searchParams }: PageProps<"/beheer/orders">) {
+  await requireAdminPage(ROLES.orders);
   await connection();
   const sp = await searchParams;
   const one = (k: string) => (typeof sp[k] === "string" && sp[k] ? (sp[k] as string) : undefined);

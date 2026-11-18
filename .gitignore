@@ -61,3 +61,16 @@ labels/
 /playwright-report/
 /blob-report/
 /backup/
+
+# Timber Online: extra afscherming (exports, rapporten, dumps, labels, lokale Supabase-CLI-status)
+*.pdf
+!public/**/*.pdf
+*.ods
+*.numbers
+*.dump
+/dumps/
+/reports/
+/rapporten/
+supabase/.temp/
+supabase/.branches/
+/.timber-cli/

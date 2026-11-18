@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { checkoutEvent, fakeStripe, paidSession, testCtx } from "../helpers/ctx";
-import { componentOnHand, freshDb, productId, q, type TestDb } from "../helpers/db";
+import { componentOnHand, freshDb, productId, q, type TestDb, activateSeedBundles } from "../helpers/db";
 import { cancelCheckout, startCheckout } from "@/server/services/checkout";
 import { handleStripeEvent } from "@/server/services/stripe-webhook";
 import { cancelOrder, refundOrder } from "@/server/services/orders";
@@ -13,6 +13,7 @@ const ACTOR = "test:admin";
 
 beforeAll(async () => {
   t = await freshDb();
+  await activateSeedBundles(t);
   ip15 = await productId(t.pool, "TO-SP2-IP15-PRV");
   bundle = await productId(t.pool, "TO-BND-IP14-CS-SP2");
 });

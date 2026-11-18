@@ -2,6 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Flash, Status } from "../_components/ui";
 import { dateTime, money } from "@/lib/format";
+import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 import { integrationStatus } from "@/server/services/runtime";
 import { enqueueAllAction, reconcileAction, retryAction, simulateOrderAction, syncNowAction } from "./actions";
@@ -11,6 +12,7 @@ type Row = { product_id: string; sku: string; title: string; bol_offer_id: strin
 type Data = { sync: Row[]; outbox: { id: string; kind: string; status: string; attempts: number; last_error: string | null; payload: { order_id: string }; created_at: string }[]; sim_offers: { offer_key: string; stock: number | null; price_cents: number | null; update_count: number; updated_at: string }[]; buffer_units: number };
 
 export default async function BolPage({ searchParams }: PageProps<"/beheer/bol">) {
+  await requireAdminPage(ROLES.catalog);
   await connection();
   const sp = await searchParams;
   const d = await getDb().rpc<Data>("api_admin_bol", {});

@@ -15,13 +15,13 @@ export function Flash({ sp }: { sp: SP }) {
 
 const TONE: Record<string, string> = {
   paid: "badge-ok", committed: "badge-ok", delivered: "badge-ok", synced: "badge-ok", sent: "badge-ok", succeeded: "badge-ok", active: "badge-ok", done: "badge-ok", label_ready: "badge-blue", handed_over: "badge-blue", in_transit: "badge-blue", ready_for_pickup: "badge-blue", shipped: "badge-blue", reserved: "badge-blue",
-  pending: "badge-warn", in_flight: "badge-warn", submitted: "badge-warn", concept: "badge-warn", unfulfilled: "badge-warn", draft: "badge-warn", simulated: "badge-warn", partially_refunded: "badge-warn",
+  pending: "badge-warn", processing: "badge-warn", in_flight: "badge-warn", submitted: "badge-warn", concept: "badge-warn", unfulfilled: "badge-warn", draft: "badge-warn", simulated: "badge-warn", partially_refunded: "badge-warn",
   failed: "badge-danger", shortage: "badge-danger", exception: "badge-danger", expired: "", cancelled: "", released: "", refunded: "", archived: "",
 };
 
 const LABELS: Record<string, string> = {
   ...PAYMENT_STATUS_LABEL, ...STOCK_STATUS_LABEL, ...FULFILLMENT_LABEL, ...SHIPMENT_STATUS_LABEL,
-  synced: "Verwerkt", in_flight: "Bezig", submitted: "Ingediend", concept: "Concept", active: "Actief", archived: "Gearchiveerd", sent: "Verstuurd", simulated: "Gesimuleerd", succeeded: "Gelukt", done: "Klaar", sending: "Bezig",
+  synced: "Verwerkt", in_flight: "Bezig", submitted: "Ingediend", concept: "Concept", active: "Actief", archived: "Gearchiveerd", sent: "Verstuurd", simulated: "Gesimuleerd", succeeded: "Gelukt", processing: "In behandeling", done: "Klaar", sending: "Bezig",
   ...CARRIER_LABEL,
 };
 

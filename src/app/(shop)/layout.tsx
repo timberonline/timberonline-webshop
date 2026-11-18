@@ -1,5 +1,8 @@
 import Link from "next/link";
 import { CartLink } from "@/components/cart-link";
+import { CATEGORIES, categoryPath } from "@/components/categories";
+import { SiteNav } from "@/components/site-nav";
+import { INFO_PAGES } from "./info/pages";
 
 export default function ShopLayout({ children }: LayoutProps<"/">) {
   const live = process.env.NEXT_PUBLIC_SHOP_MODE === "live";
@@ -22,17 +25,41 @@ export default function ShopLayout({ children }: LayoutProps<"/">) {
           <CartLink />
         </div>
       </header>
+      <SiteNav />
       <main id="inhoud" tabIndex={-1}>
         {children}
       </main>
       <footer className="site-footer">
         <div className="container">
-          <nav aria-label="Informatie">
-            <Link href="/info/verzending">Verzending</Link>
-            <Link href="/info/retourneren">Retourneren</Link>
-            <Link href="/info/voorwaarden">Algemene voorwaarden</Link>
-            <Link href="/info/privacy">Privacy</Link>
-          </nav>
+          <div className="footer-cols">
+            <nav aria-labelledby="footer-assortiment">
+              <h2 id="footer-assortiment" className="footer-title">
+                Assortiment
+              </h2>
+              <ul>
+                {CATEGORIES.map((c) => (
+                  <li key={c.slug}>
+                    <Link href={categoryPath(c)}>{c.name}</Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+            <nav aria-labelledby="footer-klantenservice">
+              <h2 id="footer-klantenservice" className="footer-title">
+                Klantenservice
+              </h2>
+              <ul>
+                <li>
+                  <Link href="/contact">Contact</Link>
+                </li>
+                {Object.entries(INFO_PAGES).map(([slug, p]) => (
+                  <li key={slug}>
+                    <Link href={`/info/${slug}`}>{p.title}</Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          </div>
           <p className="small" style={{ margin: 0 }}>
             © {new Date().getFullYear()} Timber Online · Veilig betalen via Stripe
           </p>

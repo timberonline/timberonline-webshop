@@ -198,3 +198,57 @@ details.panel[open] { padding-bottom: 16px; }
 .dl dt { color: var(--to-slate); }
 .dl dd { margin: 0; }
 pre.code { background: var(--to-surface-muted); padding: 12px; border-radius: var(--to-radius-md); overflow-x: auto; font-size: .8125rem; }
+
+/* Winkelnavigatie, categorieën, kruimelpad en contactformulier */
+h1, h2, h3 { overflow-wrap: break-word; }
+.lead { font-size: 1.125rem; color: var(--to-slate); max-width: 680px; }
+
+.site-nav { background: var(--to-white); border-bottom: 1px solid var(--to-border); }
+.site-nav ul { list-style: none; margin: 0 -12px; padding: 0; display: flex; gap: 4px; overflow-x: auto; white-space: nowrap; scrollbar-width: thin; }
+.site-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 12px; color: var(--to-anthracite); text-decoration: none; font-weight: 600; font-size: .9375rem; border-bottom: 3px solid transparent; }
+.site-nav a:hover { color: var(--to-blue-600); }
+.site-nav a[aria-current="page"] { border-bottom-color: var(--to-blue-500); color: var(--to-blue-600); }
+/* De scrollbare lijst knipt een buitenste focusring af; daarom een ring binnen de link. */
+.site-nav a:focus-visible { box-shadow: inset 0 0 0 3px var(--to-blue-500); border-radius: var(--to-radius-sm); }
+
+.category-nav ul { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--to-border); background: var(--to-white); color: var(--to-anthracite); text-decoration: none; font-weight: 600; font-size: .9375rem; }
+.chip:hover { border-color: var(--to-blue-500); color: var(--to-blue-600); }
+.chip[aria-current="page"] { background: var(--to-anthracite); border-color: var(--to-anthracite); color: var(--to-white); }
+
+@media (min-width: 768px) { .filters.filters-fixed-type { grid-template-columns: 2fr 1fr auto; } }
+
+.breadcrumbs { margin: 16px 0 8px; }
+.breadcrumbs ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.breadcrumbs li { display: inline-flex; align-items: center; gap: 4px; }
+.breadcrumbs li + li::before { content: "›"; color: var(--to-slate); }
+.breadcrumbs a { display: inline-flex; align-items: center; min-height: 24px; }
+.breadcrumbs [aria-current="page"] { color: var(--to-slate); }
+.hero .breadcrumbs { margin: 0 0 12px; }
+.hero .breadcrumbs a { color: var(--to-white); }
+.hero .breadcrumbs li + li::before, .hero .breadcrumbs [aria-current="page"] { color: #e5e7eb; }
+
+.related-links { margin-top: 16px; }
+.related-links h2 { font-size: 1.125rem; }
+.related-links ul { margin: 0; padding-left: 20px; }
+.related-links li { margin: 4px 0; }
+.related-links a { display: inline-block; padding: 4px 0; }
+
+.contact-form { margin-top: 8px; }
+/* Velden en meldingen niet onder de sticky header laten vallen bij focus of sprong vanuit de foutsamenvatting. */
+.contact-form :is(input, select, textarea), .form-status .notice { scroll-margin-top: 96px; }
+.req { color: var(--to-danger); }
+.optional { font-weight: 400; color: var(--to-slate); }
+.field-error { color: var(--to-danger); font-size: .875rem; font-weight: 600; margin: 4px 0 0; }
+.contact-form [aria-invalid="true"] { border: 2px solid var(--to-danger); }
+.error-summary h3 { font-size: 1.0625rem; margin: 0 0 4px; }
+.error-summary ul { margin: 0; padding-left: 20px; }
+.error-summary a { color: #7a1610; font-weight: 600; }
+.form-status .notice:focus-visible, .error-summary:focus-visible { box-shadow: var(--to-focus); }
+.hp-field { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+
+.site-footer .footer-cols { display: grid; gap: 8px 32px; grid-template-columns: 1fr; margin-bottom: 16px; }
+@media (min-width: 600px) { .site-footer .footer-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.site-footer .footer-cols nav { display: block; margin: 0; }
+.site-footer .footer-title { font-size: 1rem; color: var(--to-white); margin: 0 0 4px; }
+.site-footer .footer-cols ul { list-style: none; margin: 0; padding: 0; }

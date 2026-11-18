@@ -2,6 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Flash, Status } from "../_components/ui";
 import { money, TYPE_LABEL } from "@/lib/format";
+import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 import { setPriceAction } from "./actions";
 
@@ -14,6 +15,7 @@ export type AdminProductRow = {
 };
 
 export default async function ProductsPage({ searchParams }: PageProps<"/beheer/artikelen">) {
+  await requireAdminPage(ROLES.catalog);
   await connection();
   const sp = await searchParams;
   const rows = await getDb().rpc<AdminProductRow[]>("api_admin_products", {});
@@ -21,7 +23,10 @@ export default async function ProductsPage({ searchParams }: PageProps<"/beheer/
     <>
       <div className="page-head">
         <h1>Artikelen en prijzen</h1>
-        <Link className="btn" href="/beheer/artikelen/nieuwe-bundel">Nieuwe bundel</Link>
+        <div className="row" style={{ gap: 8 }}>
+          <Link className="btn btn-secondary" href="/beheer/artikelen/nieuw-artikel">Nieuw artikel</Link>
+          <Link className="btn" href="/beheer/artikelen/nieuwe-bundel">Nieuwe bundel</Link>
+        </div>
       </div>
       <Flash sp={sp} />
       <p className="muted">Prijzen per kanaal apart. Wijzigingen worden vastgelegd in het logboek en laten de voorraad ongemoeid. Bundels zijn alleen voor de webshop.</p>

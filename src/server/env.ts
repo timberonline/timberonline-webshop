@@ -10,10 +10,12 @@ export const env = {
   appUrl: () => str("APP_URL") ?? (str("VERCEL_URL") ? `https://${str("VERCEL_URL")}` : "http://localhost:3000"),
   dataDriver: () => (str("DATA_DRIVER") ?? (str("DATABASE_URL") ? "pg" : "supabase")) as "pg" | "supabase",
   databaseUrl: () => str("DATABASE_URL"),
-  supabaseUrl: () => str("NEXT_PUBLIC_SUPABASE_URL"),
-  supabaseAnonKey: () => str("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
-  supabaseServiceKey: () => str("SUPABASE_SERVICE_ROLE_KEY"),
-  storageDriver: () => (str("STORAGE_DRIVER") ?? (str("SUPABASE_SERVICE_ROLE_KEY") ? "supabase" : "local")) as "local" | "supabase",
+  // Ook de namen die de Supabase-integratie van Vercel zet (publishable/secret keys) worden herkend.
+  supabaseUrl: () => str("NEXT_PUBLIC_SUPABASE_URL") ?? str("SUPABASE_URL"),
+  supabaseAnonKey: () => str("NEXT_PUBLIC_SUPABASE_ANON_KEY") ?? str("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"),
+  supabaseServiceKey: () => str("SUPABASE_SERVICE_ROLE_KEY") ?? str("SUPABASE_SECRET_KEY"),
+  storageDriver: () =>
+    (str("STORAGE_DRIVER") ?? (str("SUPABASE_SERVICE_ROLE_KEY") ?? str("SUPABASE_SECRET_KEY") ? "supabase" : "local")) as "local" | "supabase",
   stripeSecretKey: () => str("STRIPE_SECRET_KEY"),
   stripeWebhookSecret: () => str("STRIPE_WEBHOOK_SECRET"),
   stripeLiveEnabled: () => str("STRIPE_LIVE_ENABLED") === "true",
@@ -27,6 +29,9 @@ export const env = {
   bolClientId: () => str("BOL_CLIENT_ID"),
   bolClientSecret: () => str("BOL_CLIENT_SECRET"),
   carrierMode: () => (str("CARRIER_MODE") ?? "simulated") as "simulated" | "live",
+  /** Per vervoerder afzonderlijk te activeren; valt terug op CARRIER_MODE. */
+  dhlMode: () => (str("DHL_MODE") ?? str("CARRIER_MODE") ?? "simulated") as "simulated" | "live",
+  postnlMode: () => (str("POSTNL_MODE") ?? str("CARRIER_MODE") ?? "simulated") as "simulated" | "live",
   aiProvider: () => (str("AI_PROVIDER") ?? "rule-based") as "rule-based" | "openai",
   openaiApiKey: () => str("OPENAI_API_KEY"),
   openaiModel: () => str("OPENAI_MODEL") ?? "gpt-4.1-mini",

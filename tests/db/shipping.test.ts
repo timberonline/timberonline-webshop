@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { freshDb, productId, q, type TestDb } from "../helpers/db";
+import { freshDb, productId, q, type TestDb, activateSeedBundles } from "../helpers/db";
 
 let t: TestDb;
 const ACTOR = "test:admin";
@@ -21,6 +21,7 @@ type Prep = { ok: boolean; shipment_id: string; carrier: string; error?: string;
 
 beforeAll(async () => {
   t = await freshDb();
+  await activateSeedBundles(t);
   for (const sku of ["TO-SP2-IP15-PRV", "TO-BND-IP14-CS-SP2", "TO-CS-IP14-MS"]) P[sku] = await productId(t.pool, sku);
 });
 afterAll(async () => t.close());

@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { Flash, Status } from "../_components/ui";
 import { money } from "@/lib/format";
+import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 import { deleteDiscountAction, saveDiscountAction } from "./actions";
 
@@ -46,6 +47,7 @@ function RuleForm({ rule, products }: { rule: Rule | null; products: P[] }) {
 }
 
 export default async function DiscountsPage({ searchParams }: PageProps<"/beheer/acties">) {
+  await requireAdminPage(ROLES.catalog);
   await connection();
   const sp = await searchParams;
   const db = getDb();

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { Status } from "./_components/ui";
+import { mayOpen } from "./_sections";
 import { dateTime } from "@/lib/format";
+import { mayAccess, requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 import { integrationStatus } from "@/server/services/runtime";
 
@@ -19,22 +21,27 @@ type Overview = {
 };
 
 export default async function Dashboard() {
+  const s = await requireAdminPage(ROLES.shipping);
   await connection();
   const o = await getDb().rpc<Overview>("api_admin_overview", {});
   const integ = integrationStatus();
+  // Het overzicht is ook voor de rol verzending; toon alleen tegels en meldingen die naar een toegestaan onderdeel leiden.
+  const showOrders = mayAccess(s.role, "orders");
   const kpis = [
     { l: "Te verzenden", v: o.orders_to_ship, href: "/beheer/verzendingen" },
     { l: "Wacht op betaling", v: o.orders_pending, href: "/beheer/orders?payment_status=pending" },
     { l: "Protectors op voorraad", v: o.stock_totals.protectors, href: "/beheer/voorraad" },
     { l: "Hoesjes op voorraad", v: o.stock_totals.cases, href: "/beheer/voorraad" },
     { l: "Gereserveerd (stuks)", v: o.stock_totals.reserved, href: "/beheer/voorraad" },
-  ];
+  ].filter((k) => mayOpen(s.role, k.href));
   const problems = [
     o.bol_failed && { t: `${o.bol_failed} mislukte bol-update(s)`, href: "/beheer/bol" },
     o.shipment_exceptions && { t: `${o.shipment_exceptions} verzenduitzondering(en)`, href: "/beheer/verzendingen" },
     o.email_failed && { t: `${o.email_failed} mislukte of vastgelopen e-mail(s)`, href: "/beheer/orders?mail=1" },
     o.outbox_failed && { t: `${o.outbox_failed} mislukte verzendbevestiging(en) naar bol`, href: "/beheer/bol" },
-  ].filter(Boolean) as { t: string; href: string }[];
+  ]
+    .filter((p): p is { t: string; href: string } => !!p)
+    .filter((p) => mayOpen(s.role, p.href));
 
   return (
     <>
@@ -66,24 +73,26 @@ export default async function Dashboard() {
       ) : null}
 
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))" }}>
-        <section className="card" aria-labelledby="aandacht">
-          <h2 id="aandacht" style={{ fontSize: "1.125rem" }}>
-            Orders met aandacht
-          </h2>
-          {o.attention.length === 0 ? (
-            <p className="muted">Geen.</p>
-          ) : (
-            <ul style={{ paddingLeft: 18 }}>
-              {o.attention.map((a) => (
-                <li key={a.id}>
-                  <Link href={`/beheer/orders/${a.id}`}>{a.number}</Link> ({a.channel}) · {dateTime(a.created_at)}
-                  <br />
-                  <span className="small">{a.reason}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        {showOrders ? (
+          <section className="card" aria-labelledby="aandacht">
+            <h2 id="aandacht" style={{ fontSize: "1.125rem" }}>
+              Orders met aandacht
+            </h2>
+            {o.attention.length === 0 ? (
+              <p className="muted">Geen.</p>
+            ) : (
+              <ul style={{ paddingLeft: 18 }}>
+                {o.attention.map((a) => (
+                  <li key={a.id}>
+                    <Link href={`/beheer/orders/${a.id}`}>{a.number}</Link> ({a.channel}) · {dateTime(a.created_at)}
+                    <br />
+                    <span className="small">{a.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : null}
         <section className="card" aria-labelledby="laag">
           <h2 id="laag" style={{ fontSize: "1.125rem" }}>
             Lage voorraad (vrij)
