@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { connection } from "next/server";
 import { Flash } from "../_components/ui";
 import { ROLE_LABEL, requireAdminPage, ROLES, type Role } from "@/server/auth/admin";
@@ -90,7 +91,12 @@ export default async function SettingsPage({ searchParams }: PageProps<"/beheer/
       <section className="card" style={{ marginTop: 24 }}>
         <h2 style={{ fontSize: "1.125rem" }}>Koppelingen</h2>
         <dl className="dl">
-          {Object.entries(integ).map(([k, v]) => (<><dt key={`${k}-t`}>{k}</dt><dd key={`${k}-d`}>{v}</dd></>))}
+          {Object.entries(integ).map(([k, v]) => (
+            <Fragment key={k}>
+              <dt>{k}</dt>
+              <dd>{v}</dd>
+            </Fragment>
+          ))}
         </dl>
       </section>
     </>

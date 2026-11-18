@@ -114,10 +114,10 @@ export function parsePricePrompt(prompt: string, products: AdminProduct[]): Pars
   else if (/bundel/.test(lower)) types = ["bundel"];
   const setsOnly = /sets?\b|tweepack/.test(lower);
 
-  if (!deviceSlugs && !types && !all) {
+  const skuMentions = [...text.matchAll(/\bTO-[A-Z0-9-]+\b/gi)].map((m) => m[0].toUpperCase());
+  if (!deviceSlugs && !types && !all && skuMentions.length === 0) {
     return { ok: false, error: "Noem welke artikelen (bijv. ‘alle iPhone 15-privacysets’ of een SKU)." };
   }
-  const skuMentions = [...text.matchAll(/\bTO-[A-Z0-9-]+\b/gi)].map((m) => m[0].toUpperCase());
 
   const selected = products.filter((p) => {
     if (p.status === "archived") return false;

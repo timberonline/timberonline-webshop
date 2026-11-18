@@ -8,7 +8,7 @@ export function ProductVisual({ type, size = 160, imageUrl, alt }: { type: strin
   const isPrivacy = type === "privacy";
   const isBundle = type === "bundel";
   return (
-    <svg width={size} height={size} viewBox="0 0 120 120" role="img" aria-label={alt} fill="none" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 120 120" {...(alt ? { role: "img", "aria-label": alt } : { "aria-hidden": true, focusable: false })} fill="none" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       {isCase || isBundle ? <rect x={isBundle ? 26 : 36} y="14" width="48" height="92" rx="12" stroke="#374151" fill="#E5E7EB" /> : null}
       {!isCase ? (
         <>

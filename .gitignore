@@ -55,3 +55,9 @@ labels/
 .env.*.local
 .vercel
 .claude/settings.local.json
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/backup/

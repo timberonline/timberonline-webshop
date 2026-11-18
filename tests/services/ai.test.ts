@@ -37,6 +37,11 @@ describe("AI-prijsassistent (testimplementatie)", () => {
     expect(r.items.find((i) => i.sku === "TO-SP2-IP14-STD" && i.channel === "web")?.new_cents).toBe(1796);
   });
 
+  it("accepteert een opdracht met alleen SKU's", () => {
+    const r = parsePricePrompt("Zet de webshopprijs van TO-SP2-IP15-PRV en TO-SP2-IP15P-PRV op 19,95", products);
+    expect(r.ok && r.items.map((i) => i.sku).sort()).toEqual(["TO-SP2-IP15-PRV", "TO-SP2-IP15P-PRV"]);
+  });
+
   it("vraagt om verduidelijking als kanaal of prijs ontbreekt", () => {
     expect(parsePricePrompt("Zet alle iPhone 15-privacysets op €14,95", products)).toMatchObject({ ok: false, error: expect.stringMatching(/kanaal/) });
     expect(parsePricePrompt("Webshopprijs iPhone 15 privacy aanpassen", products)).toMatchObject({ ok: false });
