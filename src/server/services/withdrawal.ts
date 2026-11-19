@@ -149,7 +149,7 @@ export async function submitWithdrawal(
   if (!v.ok) return { status: "invalid", errors: v.errors };
   if (!(await deps.limiter.take(deps.clientKey))) return { status: "rate_limited" };
   const submission_key = input.submissionKey && UUID.test(input.submissionKey) ? input.submissionKey : null;
-  let saved: { ok: boolean; id: string; reference: string; submitted_at: string; duplicate?: boolean };
+  let saved: { ok: boolean; id: string; reference: string; submitted_at: string; duplicate?: boolean; ack_status?: string };
   try {
     saved = await deps.db.rpc("api_withdrawal_submit", { ...v.data, submission_key });
     if (!saved.ok) return { status: "failed" };
@@ -160,7 +160,8 @@ export async function submitWithdrawal(
   // Vanaf hier is de herroeping vastgelegd: de klant krijgt altijd de referentie, ook als de bevestigingsmail (nog) niet lukt.
   let acknowledged = false;
   try {
-    acknowledged = (await sendWithdrawalAck(deps, saved.id)) || Boolean(saved.duplicate);
+    // Bij een herhaalde inzending: alleen "verstuurd" melden als de bevestiging echt is verstuurd (anders nu proberen).
+    acknowledged = (saved.duplicate && ["sent", "simulated"].includes(saved.ack_status ?? "")) || (await sendWithdrawalAck(deps, saved.id));
   } catch (e) {
     console.error("Ontvangstbevestiging herroeping mislukt:", (e as Error).message);
   }
@@ -183,7 +184,9 @@ export async function sendWithdrawalAck(deps: { db: Db; mail: MailDriver; appUrl
   try {
     const msg = renderWithdrawalAck(w, seller, deps.appUrl);
     const res = await deps.mail.send({ ...msg, to: w.email, idempotencyKey: `withdrawal-ack:${w.id}`, replyTo: seller?.business?.email ?? undefined });
-    await deps.db.rpc("api_withdrawal_ack_complete", { id: w.id, token, status: res.status, provider_id: res.providerId });
+    const done = await deps.db.rpc<{ ok: boolean }>("api_withdrawal_ack_complete", { id: w.id, token, status: res.status, provider_id: res.providerId });
+    // Claim intussen overgenomen door een nieuwere poging: die legt de uitkomst vast, deze telt niet als verstuurd.
+    if (!done.ok) return false;
   } catch (e) {
     await deps.db.rpc("api_withdrawal_ack_complete", { id: w.id, token, status: "failed", error: (e as Error).message }).catch(() => undefined);
     return false;

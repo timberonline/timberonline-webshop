@@ -64,8 +64,19 @@ begin
   if v_key is not null then
     select * into w from public.withdrawals where submission_key = v_key;
     if found then
-      return jsonb_build_object('ok', true, 'id', w.id, 'reference', w.reference, 'submitted_at', w.submitted_at, 'duplicate', true);
+      return jsonb_build_object('ok', true, 'id', w.id, 'reference', w.reference, 'submitted_at', w.submitted_at, 'duplicate', true,
+                                'ack_status', w.ack_status);
     end if;
+  end if;
+  -- Zelfde verklaring (zelfde order, e-mail en inhoud) binnen 30 minuten, bijv. opnieuw ingediend na herladen: bestaande teruggeven.
+  select * into w from public.withdrawals
+   where order_number = v_number and email = v_email and scope = v_scope
+     and coalesce(items, '') = trim(coalesce(p->>'items', '')) and coalesce(note, '') = trim(coalesce(p->>'note', ''))
+     and submitted_at > now() - interval '30 minutes'
+   order by submitted_at desc limit 1;
+  if found then
+    return jsonb_build_object('ok', true, 'id', w.id, 'reference', w.reference, 'submitted_at', w.submitted_at, 'duplicate', true,
+                              'ack_status', w.ack_status);
   end if;
   select id into v_order from public.orders
    where number = v_number and channel = 'web' and lower(email) = v_email;
@@ -77,7 +88,8 @@ begin
   if not found then
     -- gelijktijdige dubbele inzending met dezelfde sleutel
     select * into w from public.withdrawals where submission_key = v_key;
-    return jsonb_build_object('ok', true, 'id', w.id, 'reference', w.reference, 'submitted_at', w.submitted_at, 'duplicate', true);
+    return jsonb_build_object('ok', true, 'id', w.id, 'reference', w.reference, 'submitted_at', w.submitted_at, 'duplicate', true,
+                              'ack_status', w.ack_status);
   end if;
   perform public.audit('klant:herroepingsformulier', 'withdrawal_received', 'withdrawal', w.id::text, null,
                        jsonb_build_object('reference', w.reference, 'order_number', w.order_number, 'matched', v_order is not null,

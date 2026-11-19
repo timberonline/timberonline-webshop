@@ -291,3 +291,53 @@ describe("Codex ronde 10", () => {
     expect(m.text).toContain("Heb je de artikelen nog niet ontvangen?");
   });
 });
+
+describe("Codex ronde 11", () => {
+  const limiter = () => createRateLimiter({ limit: 50, windowMs: 60_000 });
+  const values = (over: Record<string, string> = {}) => ({ name: "Test Klant", email: "klant@example.test", order_number: "TO424242", scope: "all", items: "", note: "", ...over });
+
+  it("dezelfde verklaring opnieuw (nieuwe sleutel, bijv. na herladen) binnen 30 minuten levert dezelfde herroeping", async () => {
+    const deps = { db: t.db, mail: createSimulatedMail(), appUrl: "https://shop.test", clientKey: "k20", limiter: limiter() };
+    const a = await submitWithdrawal({ ...values(), submissionKey: "aaaaaaaa-1111-4111-8111-111111111111" }, deps);
+    const b = await submitWithdrawal({ ...values(), submissionKey: "bbbbbbbb-2222-4222-8222-222222222222" }, deps);
+    if (a.status !== "received" || b.status !== "received") throw new Error("niet ontvangen");
+    expect(b.reference).toBe(a.reference);
+    expect(b.acknowledged).toBe(true);
+    // andere inhoud = nieuwe herroeping
+    const c = await submitWithdrawal({ ...values({ scope: "partial", items: "1 hoesje" }) }, deps);
+    if (c.status !== "received") throw new Error("niet ontvangen");
+    expect(c.reference).not.toBe(a.reference);
+  });
+
+  it("herhaalde inzending meldt 'niet verstuurd' zolang de bevestiging niet echt is verstuurd", async () => {
+    const deps = { db: t.db, mail: createSimulatedMail(), appUrl: "https://shop.test", clientKey: "k21", limiter: limiter() };
+    const a = await submitWithdrawal(values({ order_number: "TO434343" }), deps);
+    if (a.status !== "received") throw new Error("niet ontvangen");
+    // bevestiging staat (nog) op 'sending' door een andere, actieve poging
+    await t.pool.query("update withdrawals set ack_status = 'sending', ack_sent_at = null where reference = $1", [a.reference]);
+    const b = await submitWithdrawal(values({ order_number: "TO434343" }), deps);
+    if (b.status !== "received") throw new Error("niet ontvangen");
+    expect(b.reference).toBe(a.reference);
+    expect(b.acknowledged).toBe(false);
+  });
+
+  it("een poging waarvan de claim is overgenomen, telt niet als verstuurd", async () => {
+    const deps = { db: t.db, mail: createSimulatedMail(), appUrl: "https://shop.test", clientKey: "k22", limiter: limiter() };
+    const a = await submitWithdrawal(values({ order_number: "TO454545" }), deps);
+    if (a.status !== "received") throw new Error("niet ontvangen");
+    const [w] = await q<{ id: string }>(t.pool, "select id from withdrawals where reference = $1", [a.reference]);
+    await t.pool.query("update withdrawals set ack_status = 'pending', ack_attempts = 0 where id = $1", [w.id]);
+    // de mail-verzending "duurt lang"; intussen neemt een andere poging de claim over
+    const slowMail = {
+      mode: "simulated" as const,
+      async send() {
+        await t.pool.query("alter table withdrawals disable trigger withdrawals_touch");
+        await t.pool.query("update withdrawals set updated_at = now() - interval '6 minutes' where id = $1", [w.id]);
+        await t.pool.query("alter table withdrawals enable trigger withdrawals_touch");
+        await t.db.rpc("api_withdrawal_ack_claim", { id: w.id });
+        return { status: "simulated" as const, providerId: null };
+      },
+    };
+    expect(await sendWithdrawalAck({ db: t.db, mail: slowMail, appUrl: "https://shop.test" }, w.id)).toBe(false);
+  });
+});
