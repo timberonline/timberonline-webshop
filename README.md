@@ -55,7 +55,9 @@ E2E_BASE_URL=https://… npx playwright test  # alleen de storefronttests tegen 
 ## Database-migraties
 
 Migraties staan in `supabase/migrations` en zijn niet-destructief (alleen nieuwe objecten; de seed overschrijft niets).
-Toepassen op Supabase: `npx supabase db push` (na `supabase link`) of via de SQL-editor in volgorde van bestandsnaam.
+
+- **Eerste inrichting van een leeg project** (zo is TIMBERONLINE ingericht op 19-11-2026): `npx tsx scripts/db/bundle-migrations.ts > /tmp/alle-migraties.sql`, inhoud plakken in de SQL-editor en uitvoeren. Alles gebeurt in één transactie en elke versie wordt geregistreerd in `supabase_migrations.schema_migrations`. Het script weigert als er al migraties staan. Controleer daarna: 341 stuks voorraad (315 + 26), RLS op alle tabellen, buckets `product-images` (publiek) en `shipping-labels` (privé).
+- **Latere migraties**: `npx supabase db push` (na `supabase link --project-ref …` met een Timber-login), of het nieuwe bestand in de SQL-editor uitvoeren en de versie registreren.
 
 ## Back-up en herstel
 
