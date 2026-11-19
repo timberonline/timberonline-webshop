@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_ADMIN = ["/beheer/login", "/beheer/auth", "/beheer/wachtwoord"];
+const PUBLIC_ADMIN = ["/beheer/login", "/beheer/auth", "/beheer/wachtwoord", "/beheer/link-bevestigen"];
 
 /**
  * Ververst de Supabase-sessie en stuurt niet-ingelogde bezoekers van /beheer naar de login.

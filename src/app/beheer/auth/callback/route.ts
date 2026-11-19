@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import { createAuthClient } from "@/server/auth/supabase";
-import { isAllowedLinkType, safeAdminNext } from "../link";
+import { encodePendingLink, isAllowedLinkType, LINK_COOKIE, LINK_COOKIE_OPTIONS, safeAdminNext } from "../link";
+
+const noReferrer = (res: NextResponse) => {
+  res.headers.set("Referrer-Policy", "no-referrer");
+  res.headers.set("Cache-Control", "no-store");
+  return res;
+};
 
 /**
  * Rondt een e-maillink af:
  * - PKCE (`?code=`): wachtwoord herstellen vanaf het loginscherm; gebonden aan deze browser (code verifier).
- * - token-hash (`?token_hash=&type=`): NIET direct afronden op GET (login-CSRF, linkscanners in mailprogramma's),
- *   maar doorsturen naar een bevestigingspagina; pas na een klik verifieert een server action de link.
+ * - token-hash (`?token_hash=&type=`): NIET direct afronden op GET (login-CSRF, linkscanners in mailprogramma's).
+ *   De token gaat in een kortlevende httpOnly-cookie; de bevestigingspagina (zonder token in de URL) laat een
+ *   server action pas na een klik verifiëren.
  */
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -15,16 +22,14 @@ export async function GET(request: Request) {
   const type = url.searchParams.get("type");
   const next = safeAdminNext(url.searchParams.get("next"));
   if (tokenHash && isAllowedLinkType(type)) {
-    const to = new URL("/beheer/link-bevestigen", url.origin);
-    to.searchParams.set("token_hash", tokenHash);
-    to.searchParams.set("type", type);
-    to.searchParams.set("next", next);
-    return NextResponse.redirect(to);
+    const res = NextResponse.redirect(new URL("/beheer/link-bevestigen", url.origin));
+    res.cookies.set(LINK_COOKIE, encodePendingLink({ tokenHash, type, next }), LINK_COOKIE_OPTIONS);
+    return noReferrer(res);
   }
   const supabase = await createAuthClient();
   if (supabase && code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) return NextResponse.redirect(new URL(next, url.origin));
+    if (!error) return noReferrer(NextResponse.redirect(new URL(next, url.origin)));
   }
-  return NextResponse.redirect(new URL("/beheer/login", url.origin));
+  return noReferrer(NextResponse.redirect(new URL("/beheer/login", url.origin)));
 }

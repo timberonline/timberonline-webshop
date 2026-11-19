@@ -1,19 +1,20 @@
 "use server";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createAuthClient } from "@/server/auth/supabase";
-import { isAllowedLinkType, safeAdminNext } from "../auth/link";
+import { decodePendingLink, LINK_COOKIE } from "../auth/link";
 
 /**
- * Verifieert een uitnodigings- of herstellink pas na een bewuste klik (server action: Next controleert de Origin,
- * dus een andere site kan dit formulier niet namens de bezoeker indienen).
+ * Verifieert een uitnodigings- of herstellink pas na een bewuste klik. De token komt uit de httpOnly-cookie die de
+ * callback zette (niet uit het formulier); Next controleert bij server actions bovendien de Origin.
  */
-export async function confirmLinkAction(fd: FormData) {
-  const tokenHash = String(fd.get("token_hash") ?? "");
-  const type = String(fd.get("type") ?? "");
-  const next = safeAdminNext(String(fd.get("next") ?? ""));
+export async function confirmLinkAction() {
+  const store = await cookies();
+  const pending = decodePendingLink(store.get(LINK_COOKIE)?.value);
+  store.delete({ name: LINK_COOKIE, path: "/beheer" }); // eenmalig, ook bij een fout
   const supabase = await createAuthClient();
-  if (!supabase || !tokenHash || !isAllowedLinkType(type)) redirect("/beheer/login");
-  const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+  if (!pending || !supabase) redirect("/beheer/login");
+  const { error } = await supabase.auth.verifyOtp({ token_hash: pending.tokenHash, type: pending.type });
   if (error) redirect("/beheer/login");
-  redirect(next);
+  redirect(pending.next);
 }
