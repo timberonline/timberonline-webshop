@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { Flash, Status } from "../_components/ui";
+import { Flash, Status, shippingStatus } from "../_components/ui";
 import { dateTime, money } from "@/lib/format";
 import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
@@ -101,7 +101,7 @@ export default async function OrdersPage({ searchParams }: PageProps<"/beheer/or
                     <Status value={r.stock_status} />
                   </td>
                   <td>
-                    <Status value={r.fulfillment_status} />
+                    <Status value={shippingStatus(r.payment_status, r.fulfillment_status)} />
                   </td>
                   <td className="r num">{money(r.total_cents)}</td>
                 </tr>

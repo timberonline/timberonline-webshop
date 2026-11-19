@@ -21,9 +21,14 @@ const TONE: Record<string, string> = {
 
 const LABELS: Record<string, string> = {
   ...PAYMENT_STATUS_LABEL, ...STOCK_STATUS_LABEL, ...FULFILLMENT_LABEL, ...SHIPMENT_STATUS_LABEL,
-  synced: "Verwerkt", in_flight: "Bezig", submitted: "Ingediend", concept: "Concept", active: "Actief", archived: "Gearchiveerd", sent: "Verstuurd", simulated: "Gesimuleerd", succeeded: "Gelukt", processing: "In behandeling", done: "Klaar", sending: "Bezig",
+  synced: "Verwerkt", in_flight: "Bezig", submitted: "Ingediend", concept: "Concept", active: "Actief", archived: "Gearchiveerd", sent: "Verstuurd", simulated: "Gesimuleerd", succeeded: "Gelukt", processing: "In behandeling", not_to_ship: "Niet verzenden", done: "Klaar", sending: "Bezig",
   ...CARRIER_LABEL,
 };
+
+/** Verzendstatus zoals beheer hem moet lezen: een niet-betaalde of volledig terugbetaalde order is niet "te verzenden". */
+export function shippingStatus(paymentStatus: string, fulfillmentStatus: string) {
+  return fulfillmentStatus === "unfulfilled" && !["paid", "partially_refunded"].includes(paymentStatus) ? "not_to_ship" : fulfillmentStatus;
+}
 
 export function Status({ value, label }: { value: string | null | undefined; label?: string }) {
   if (!value) return <span className="muted">–</span>;

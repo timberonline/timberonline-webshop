@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { randomUUID } from "node:crypto";
-import { Flash, Status } from "../../_components/ui";
+import { Flash, Status, shippingStatus } from "../../_components/ui";
 import { CARRIER_LABEL, dateTime, money } from "@/lib/format";
 import { requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
@@ -60,7 +60,7 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/be
             <dt>Voorraad</dt>
             <dd><Status value={o.stock_status} /></dd>
             <dt>Verzending</dt>
-            <dd><Status value={o.fulfillment_status} /></dd>
+            <dd><Status value={shippingStatus(o.payment_status, o.fulfillment_status)} /></dd>
             <dt>Aangemaakt</dt>
             <dd>{dateTime(o.created_at)}</dd>
             {o.paid_at ? (<><dt>Betaald</dt><dd>{dateTime(o.paid_at)}</dd></>) : null}
