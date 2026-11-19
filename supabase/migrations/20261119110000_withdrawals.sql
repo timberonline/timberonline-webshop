@@ -43,7 +43,9 @@ create trigger withdrawals_touch before update on public.withdrawals
   for each row execute function public.touch_updated_at();
 
 -- Vastleggen. Geeft geen informatie terug over het al dan niet bestaan van de order (geen opsomming van ordernummers).
--- Idempotent per submission_key: dezelfde inzending nogmaals levert de bestaande herroeping op.
+-- Idempotent per submission_key (willekeurig, per formulierpoging; de browser bewaart hem ook over herladen heen):
+-- dezelfde inzending nogmaals levert de bestaande herroeping op. Geen samenvoegen op inhoud (zou verklaringen van
+-- anderen samenvoegen en het bestaan van een herroeping prijsgeven).
 create or replace function public.api_withdrawal_submit(p jsonb) returns jsonb
 language plpgsql as $$
 declare
@@ -67,16 +69,6 @@ begin
       return jsonb_build_object('ok', true, 'id', w.id, 'reference', w.reference, 'submitted_at', w.submitted_at, 'duplicate', true,
                                 'ack_status', w.ack_status);
     end if;
-  end if;
-  -- Zelfde verklaring (zelfde order, e-mail en inhoud) binnen 30 minuten, bijv. opnieuw ingediend na herladen: bestaande teruggeven.
-  select * into w from public.withdrawals
-   where order_number = v_number and email = v_email and scope = v_scope
-     and coalesce(items, '') = trim(coalesce(p->>'items', '')) and coalesce(note, '') = trim(coalesce(p->>'note', ''))
-     and submitted_at > now() - interval '30 minutes'
-   order by submitted_at desc limit 1;
-  if found then
-    return jsonb_build_object('ok', true, 'id', w.id, 'reference', w.reference, 'submitted_at', w.submitted_at, 'duplicate', true,
-                              'ack_status', w.ack_status);
   end if;
   select id into v_order from public.orders
    where number = v_number and channel = 'web' and lower(email) = v_email;

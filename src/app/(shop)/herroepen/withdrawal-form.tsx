@@ -9,6 +9,29 @@ const INITIAL: WithdrawalFormState = { status: "idle", errors: {}, values: EMPTY
 const ORDER: WithdrawalField[] = ["name", "order_number", "email", "scope", "items", "note"];
 const fid = (f: WithdrawalField) => `herroep-${f}`;
 
+const KEY_STORE = "to-herroep-sleutels";
+const KEY_TTL_MS = 30 * 60_000;
+
+/**
+ * Sleutel per inhoud van de verklaring, 30 minuten bewaard in deze browsertab (sessionStorage). Zelfde inhoud na
+ * herladen = zelfde sleutel; andere inhoud = nieuwe sleutel. Zonder opslag: steeds een nieuwe sleutel.
+ */
+function keyFor(v: WithdrawalValues) {
+  const fp = [v.name, v.email, v.order_number, v.scope, v.items, v.note].map((x) => x.trim().toLowerCase()).join("\u0001");
+  const now = Date.now();
+  try {
+    const store = JSON.parse(sessionStorage.getItem(KEY_STORE) ?? "{}") as Record<string, { k: string; t: number }>;
+    for (const [f, e] of Object.entries(store)) if (now - e.t > KEY_TTL_MS) delete store[f];
+    const hit = store[fp];
+    const k = hit?.k ?? crypto.randomUUID();
+    store[fp] = { k, t: hit?.t ?? now };
+    sessionStorage.setItem(KEY_STORE, JSON.stringify(store));
+    return k;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
 const dateTimeNl = (iso: string) =>
   new Intl.DateTimeFormat("nl-NL", { timeZone: "Europe/Amsterdam", dateStyle: "long", timeStyle: "medium" }).format(new Date(iso));
 
@@ -18,8 +41,8 @@ export function WithdrawalForm() {
   const [values, setValues] = useState<WithdrawalValues>(EMPTY);
   const [clientErrors, setClientErrors] = useState<Partial<Record<WithdrawalField, string>>>({});
   const [serverErrors, setServerErrors] = useState<Partial<Record<WithdrawalField, string>>>({});
-  // Eén sleutel per ingevuld formulier: opnieuw indienen na een fout maakt geen tweede herroeping.
-  const [submissionKey] = useState(() => crypto.randomUUID());
+  // Eén willekeurige sleutel per ingevulde verklaring: opnieuw indienen (na een fout of herladen) maakt geen tweede herroeping.
+  const [submissionKey, setSubmissionKey] = useState("");
   const focusRef = useRef<HTMLDivElement>(null);
 
   // Serverfouten: terug naar stap 1 met de ingevulde waarden.
@@ -86,6 +109,7 @@ export function WithdrawalForm() {
       focusRef.current?.focus();
       return;
     }
+    setSubmissionKey(keyFor(values));
     setStep("confirm");
   };
 

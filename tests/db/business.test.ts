@@ -292,30 +292,26 @@ describe("Codex ronde 10", () => {
   });
 });
 
-describe("Codex ronde 11", () => {
+describe("Codex ronde 11 en 12", () => {
   const limiter = () => createRateLimiter({ limit: 50, windowMs: 60_000 });
   const values = (over: Record<string, string> = {}) => ({ name: "Test Klant", email: "klant@example.test", order_number: "TO424242", scope: "all", items: "", note: "", ...over });
 
-  it("dezelfde verklaring opnieuw (nieuwe sleutel, bijv. na herladen) binnen 30 minuten levert dezelfde herroeping", async () => {
+  it("geen samenvoegen op inhoud: een andere sleutel (andere poging of andere persoon) is een nieuwe herroeping", async () => {
     const deps = { db: t.db, mail: createSimulatedMail(), appUrl: "https://shop.test", clientKey: "k20", limiter: limiter() };
     const a = await submitWithdrawal({ ...values(), submissionKey: "aaaaaaaa-1111-4111-8111-111111111111" }, deps);
     const b = await submitWithdrawal({ ...values(), submissionKey: "bbbbbbbb-2222-4222-8222-222222222222" }, deps);
     if (a.status !== "received" || b.status !== "received") throw new Error("niet ontvangen");
-    expect(b.reference).toBe(a.reference);
-    expect(b.acknowledged).toBe(true);
-    // andere inhoud = nieuwe herroeping
-    const c = await submitWithdrawal({ ...values({ scope: "partial", items: "1 hoesje" }) }, deps);
-    if (c.status !== "received") throw new Error("niet ontvangen");
-    expect(c.reference).not.toBe(a.reference);
+    expect(b.reference).not.toBe(a.reference);
   });
 
   it("herhaalde inzending meldt 'niet verstuurd' zolang de bevestiging niet echt is verstuurd", async () => {
     const deps = { db: t.db, mail: createSimulatedMail(), appUrl: "https://shop.test", clientKey: "k21", limiter: limiter() };
-    const a = await submitWithdrawal(values({ order_number: "TO434343" }), deps);
+    const key = "cccccccc-3333-4333-8333-333333333333";
+    const a = await submitWithdrawal({ ...values({ order_number: "TO434343" }), submissionKey: key }, deps);
     if (a.status !== "received") throw new Error("niet ontvangen");
     // bevestiging staat (nog) op 'sending' door een andere, actieve poging
     await t.pool.query("update withdrawals set ack_status = 'sending', ack_sent_at = null where reference = $1", [a.reference]);
-    const b = await submitWithdrawal(values({ order_number: "TO434343" }), deps);
+    const b = await submitWithdrawal({ ...values({ order_number: "TO434343" }), submissionKey: key }, deps);
     if (b.status !== "received") throw new Error("niet ontvangen");
     expect(b.reference).toBe(a.reference);
     expect(b.acknowledged).toBe(false);
@@ -339,5 +335,20 @@ describe("Codex ronde 11", () => {
       },
     };
     expect(await sendWithdrawalAck({ db: t.db, mail: slowMail, appUrl: "https://shop.test" }, w.id)).toBe(false);
+  });
+});
+
+describe("onderhoud herroepingsbevestigingen", () => {
+  it("is begrensd in tijd: een hangende mailprovider houdt de cron niet op", async () => {
+    const r = await submitWithdrawal({ name: "A", email: "a@example.test", order_number: "TO565656", scope: "all", items: "", note: "" }, {
+      db: t.db, mail: createSimulatedMail(), appUrl: "https://shop.test", clientKey: "k30", limiter: createRateLimiter({ limit: 5, windowMs: 60_000 }),
+    });
+    if (r.status !== "received") throw new Error("niet ontvangen");
+    await t.pool.query("update withdrawals set ack_status = 'failed', ack_attempts = 1 where reference = $1", [r.reference]);
+    const hanging = { mode: "simulated" as const, send: () => new Promise<never>(() => {}) };
+    const started = Date.now();
+    const res = await retryWithdrawalAcks({ db: t.db, mail: hanging, appUrl: "https://shop.test" }, { budgetMs: 200 });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(res.sent).toBe(0);
   });
 });

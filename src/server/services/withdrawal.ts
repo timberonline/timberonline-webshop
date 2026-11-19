@@ -204,12 +204,22 @@ export async function sendWithdrawalAck(deps: { db: Db; mail: MailDriver; appUrl
 
 export type { PostalAddress };
 
-/** Periodiek onderhoud: mislukte of vastgelopen ontvangstbevestigingen opnieuw versturen. */
-export async function retryWithdrawalAcks(deps: { db: Db; mail: MailDriver; appUrl: string }) {
-  const due = await deps.db.rpc<string[]>("api_withdrawal_ack_due", { limit: 20 });
+/**
+ * Periodiek onderhoud: mislukte of vastgelopen ontvangstbevestigingen opnieuw versturen. Begrensd (aantal en tijd), zodat
+ * een trage mailprovider de andere onderhoudstaken niet ophoudt; de rest volgt bij de volgende ronde.
+ */
+export async function retryWithdrawalAcks(deps: { db: Db; mail: MailDriver; appUrl: string }, opts: { limit?: number; budgetMs?: number } = {}) {
+  const due = await deps.db.rpc<string[]>("api_withdrawal_ack_due", { limit: opts.limit ?? 5 });
+  const deadline = Date.now() + (opts.budgetMs ?? 15_000);
   let sent = 0;
   for (const id of due) {
-    if (await sendWithdrawalAck(deps, id).catch(() => false)) sent++;
+    const left = deadline - Date.now();
+    if (left <= 0) break;
+    const ok = await Promise.race([
+      sendWithdrawalAck(deps, id).catch(() => false),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), left)),
+    ]);
+    if (ok) sent++;
   }
   return { due: due.length, sent };
 }
