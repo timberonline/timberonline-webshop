@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createSimulatedMail, type MailMessage } from "@/server/integrations/mail";
 import { checkoutSubmitMessage } from "@/server/services/checkout";
 import { renderEmail } from "@/server/services/email";
-import { renderWithdrawalAck, sendWithdrawalAck, submitWithdrawal, validateWithdrawal } from "@/server/services/withdrawal";
+import { renderWithdrawalAck, retryWithdrawalAcks, sendWithdrawalAck, submitWithdrawal, validateWithdrawal } from "@/server/services/withdrawal";
+import { addressMissing, businessMissing, launchChecklist } from "@/server/services/business";
 import { createRateLimiter } from "@/server/services/contact";
 import type { OrderForEmail } from "@/server/services/types";
 import { freshDb, productId, q, type TestDb } from "../helpers/db";
@@ -190,5 +191,103 @@ describe("e-mails en afrekenen met verkopergegevens", () => {
     expect(m).toContain("bestelling met betalingsverplichting bij Timber Online (Timber Services)");
     expect(m).toContain("https://shop.test/info/voorwaarden");
     expect(m.length).toBeLessThanOrEqual(1200);
+  });
+});
+
+describe("Codex ronde 10", () => {
+  const limiter = () => createRateLimiter({ limit: 50, windowMs: 60_000 });
+  const values = (over: Record<string, string> = {}) => ({ name: "Test Klant", email: "klant@example.test", order_number: "TO123456", scope: "all", items: "", note: "", ...over });
+
+  it("dezelfde inzending (submission key) twee keer levert één herroeping en dezelfde referentie", async () => {
+    const key = "11111111-2222-4333-8444-555555555555";
+    const deps = { db: t.db, mail: createSimulatedMail(), appUrl: "https://shop.test", clientKey: "k10", limiter: limiter() };
+    const a = await submitWithdrawal({ ...values(), submissionKey: key }, deps);
+    const b = await submitWithdrawal({ ...values(), submissionKey: key }, deps);
+    expect(a.status).toBe("received");
+    expect(b.status).toBe("received");
+    if (a.status === "received" && b.status === "received") expect(b.reference).toBe(a.reference);
+    expect(await q(t.pool, "select 1 from withdrawals where submission_key = $1", [key])).toHaveLength(1);
+  });
+
+  it("als de bevestiging na het vastleggen faalt, krijgt de klant toch de referentie; onderhoud verstuurt later", async () => {
+    const failing = {
+      rpc: async <T,>(fn: string, args: Record<string, unknown>): Promise<T> => {
+        if (fn === "api_withdrawal_ack_claim") throw new Error("database tijdelijk weg");
+        return t.db.rpc<T>(fn as `api_${string}`, args);
+      },
+    };
+    const sink: MailMessage[] = [];
+    const r = await submitWithdrawal(values({ order_number: "TO777777" }), { db: failing, mail: createSimulatedMail(sink), appUrl: "https://shop.test", clientKey: "k11", limiter: limiter() });
+    expect(r.status).toBe("received");
+    if (r.status !== "received") return;
+    expect(r.acknowledged).toBe(false);
+    expect(sink).toHaveLength(0);
+    const due = await t.db.rpc<string[]>("api_withdrawal_ack_due", {});
+    const [w] = await q<{ id: string }>(t.pool, "select id from withdrawals where reference = $1", [r.reference]);
+    expect(due).toContain(w.id);
+    const res = await retryWithdrawalAcks({ db: t.db, mail: createSimulatedMail(sink), appUrl: "https://shop.test" });
+    expect(res.sent).toBeGreaterThanOrEqual(1);
+    expect(sink.some((m) => m.subject.includes(r.reference))).toBe(true);
+  });
+
+  it("vastgelopen claim wordt na 5 minuten opnieuw opgepakt; een oude poging kan een nieuwe claim niet afronden", async () => {
+    const r = await submitWithdrawal(values({ order_number: "TO888888" }), { db: t.db, mail: createSimulatedMail(), appUrl: "https://shop.test", clientKey: "k12", limiter: limiter() });
+    if (r.status !== "received") throw new Error("niet ontvangen");
+    const [w] = await q<{ id: string }>(t.pool, "select id from withdrawals where reference = $1", [r.reference]);
+    await t.pool.query("update withdrawals set ack_status = 'pending', ack_attempts = 0 where id = $1", [w.id]);
+    const first = await t.db.rpc<{ claimed: boolean; token: string }>("api_withdrawal_ack_claim", { id: w.id });
+    expect(first.claimed).toBe(true);
+    // proces stopt: claim blijft 'sending'; na 5 minuten weer beschikbaar
+    expect((await t.db.rpc<{ claimed: boolean }>("api_withdrawal_ack_claim", { id: w.id })).claimed).toBe(false);
+    await t.pool.query("alter table withdrawals disable trigger withdrawals_touch");
+    await t.pool.query("update withdrawals set updated_at = now() - interval '6 minutes' where id = $1", [w.id]);
+    await t.pool.query("alter table withdrawals enable trigger withdrawals_touch");
+    const list = await t.db.rpc<{ id: string; ack_stale: boolean }[]>("api_admin_withdrawals", {});
+    expect(list.find((x) => x.id === w.id)?.ack_stale).toBe(true);
+    const second = await t.db.rpc<{ claimed: boolean; token: string }>("api_withdrawal_ack_claim", { id: w.id });
+    expect(second.claimed).toBe(true);
+    expect(await t.db.rpc("api_withdrawal_ack_complete", { id: w.id, token: first.token, status: "sent" })).toEqual({ ok: false });
+    expect(await t.db.rpc("api_withdrawal_ack_complete", { id: w.id, token: second.token, status: "sent" })).toEqual({ ok: true });
+  });
+
+  it("na 5 mislukte pogingen stopt het automatisch opnieuw proberen; beheer kan forceren", async () => {
+    const r = await submitWithdrawal(values({ order_number: "TO999111" }), { db: t.db, mail: createSimulatedMail(), appUrl: "https://shop.test", clientKey: "k13", limiter: limiter() });
+    if (r.status !== "received") throw new Error("niet ontvangen");
+    const [w] = await q<{ id: string }>(t.pool, "select id from withdrawals where reference = $1", [r.reference]);
+    await t.pool.query("update withdrawals set ack_status = 'failed', ack_attempts = 5 where id = $1", [w.id]);
+    expect(await t.db.rpc<string[]>("api_withdrawal_ack_due", {})).not.toContain(w.id);
+    expect(await sendWithdrawalAck({ db: t.db, mail: createSimulatedMail(), appUrl: "https://shop.test" }, w.id)).toBe(false);
+    expect(await sendWithdrawalAck({ db: t.db, mail: createSimulatedMail(), appUrl: "https://shop.test" }, w.id, { force: true })).toBe(true);
+  });
+
+  it("instellingen opslaan is alles-of-niets", async () => {
+    const before = (await t.db.rpc<Record<string, unknown>>("api_admin_settings", {})).bol_buffer_units;
+    await expect(
+      t.db.rpc("api_settings_save", { actor: ACTOR, items: [{ key: "bol_buffer_units", value: 7 }, { key: "bestaat_niet", value: 1 }] }),
+    ).rejects.toThrow(/unknown_setting/);
+    expect((await t.db.rpc<Record<string, unknown>>("api_admin_settings", {})).bol_buffer_units).toEqual(before);
+  });
+
+  it("bevestigen vraagt volledige gegevens; de checklist telt onvolledige gegevens niet als bevestigd", () => {
+    expect(businessMissing(BUSINESS)).toEqual([]);
+    expect(businessMissing({ ...BUSINESS, kvk: null, phone: null })).toEqual(["KvK-nummer", "telefoon"]);
+    expect(addressMissing({ name: "Timber Online", street: "Abel Tasmanstraat", house_number: "22", postal_code: "6413 SX", city: "Heerlen", country: "NL" })).toEqual([]);
+    expect(addressMissing({ name: "X", street: "Straat", house_number: "1", postal_code: "64135", city: "Heerlen", country: "NL" })).toEqual(["postcode"]);
+    expect(addressMissing({ name: "X", street: "Rue", house_number: "1", postal_code: "1000", city: "Brussel", country: "BE" })).toEqual([]);
+    const at = "2026-11-19T06:00:00Z";
+    const items = launchChecklist(
+      { business_info: { ...BUSINESS, confirmed_at: at }, sender_address: { name: "X", street: null, confirmed_at: at }, return_address: {} },
+      { legalTextsFinal: false, openPolicyChoices: 3 },
+    );
+    expect(Object.fromEntries(items.map((i) => [i.key, i.done]))).toEqual({ business_info: true, sender_address: false, return_address: false, legal_texts: false });
+  });
+
+  it("ontvangstbevestiging geeft ook een instructie als de bestelling nog niet is ontvangen", () => {
+    const m = renderWithdrawalAck(
+      { id: "x", reference: "HR-2", order_number: "TO1", name: "A", email: "a@b.test", scope: "all", items: null, note: null, submitted_at: "2026-11-19T12:00:00Z" },
+      null,
+      "https://shop.test",
+    );
+    expect(m.text).toContain("Heb je de artikelen nog niet ontvangen?");
   });
 });

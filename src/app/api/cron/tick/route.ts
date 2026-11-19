@@ -4,6 +4,7 @@ import { env } from "@/server/env";
 import { getCtx } from "@/server/services/runtime";
 import { pollBolOrders, processBolQueue, processOutbox, reconcileBol } from "@/server/services/bol-sync";
 import { sendOrderEmail } from "@/server/services/email";
+import { retryWithdrawalAcks } from "@/server/services/withdrawal";
 
 function authorized(request: Request) {
   const secret = env.cronSecret();
@@ -27,5 +28,9 @@ export async function GET(request: Request) {
   if (reconciled.differences > 0) await processBolQueue(ctx, { limit: 50 });
   const retry = await ctx.db.rpc<{ order_id: string; kind: "order_confirmation" | "shipped" }[]>("api_email_retry_list", {});
   for (const m of retry) await sendOrderEmail(ctx, m.order_id, m.kind);
-  return NextResponse.json({ expired: expired.expired, bol: bol.length, outbox: outbox.length, imported: imported.length, mails: retry.length, bol_differences: reconciled.differences, bol_missing: reconciled.missing, bol_read_errors: reconciled.errors.length });
+  const withdrawals = await retryWithdrawalAcks(ctx).catch((e: Error) => {
+    console.error("Herroepingsbevestigingen opnieuw versturen mislukt:", e.message);
+    return { due: 0, sent: 0 };
+  });
+  return NextResponse.json({ expired: expired.expired, bol: bol.length, outbox: outbox.length, imported: imported.length, mails: retry.length, withdrawal_acks: withdrawals.sent, bol_differences: reconciled.differences, bol_missing: reconciled.missing, bol_read_errors: reconciled.errors.length });
 }

@@ -74,6 +74,19 @@ begin
   return jsonb_build_object('ok', true, 'changed', true);
 end $$;
 
+-- Hele instellingenformulier in één transactie: of alles wordt opgeslagen, of niets.
+create or replace function public.api_settings_save(p jsonb) returns jsonb
+language plpgsql as $$
+declare v_actor text := public.require_actor(p); it jsonb; v_changed int := 0; r jsonb;
+begin
+  if jsonb_typeof(p->'items') <> 'array' then raise exception 'invalid_setting'; end if;
+  for it in select * from jsonb_array_elements(p->'items') loop
+    r := public.api_setting_save(jsonb_build_object('actor', v_actor, 'key', it->>'key', 'value', it->'value'));
+    if (r->>'changed')::boolean then v_changed := v_changed + 1; end if;
+  end loop;
+  return jsonb_build_object('ok', true, 'changed', v_changed);
+end $$;
+
 -- ---------------------------------------------------------------------------
 -- 2. Verkopergegevens per order (vaste kopie)
 -- ---------------------------------------------------------------------------

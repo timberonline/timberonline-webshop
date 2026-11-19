@@ -17,6 +17,9 @@ export function WithdrawalForm() {
   const [step, setStep] = useState<"form" | "confirm">("form");
   const [values, setValues] = useState<WithdrawalValues>(EMPTY);
   const [clientErrors, setClientErrors] = useState<Partial<Record<WithdrawalField, string>>>({});
+  const [serverErrors, setServerErrors] = useState<Partial<Record<WithdrawalField, string>>>({});
+  // Eén sleutel per ingevuld formulier: opnieuw indienen na een fout maakt geen tweede herroeping.
+  const [submissionKey] = useState(() => crypto.randomUUID());
   const focusRef = useRef<HTMLDivElement>(null);
 
   // Serverfouten: terug naar stap 1 met de ingevulde waarden.
@@ -24,6 +27,7 @@ export function WithdrawalForm() {
     if (state.seq === 0) return;
     if (state.status === "invalid") {
       setValues(state.values);
+      setServerErrors(state.errors);
       setStep("form");
     }
     focusRef.current?.focus();
@@ -52,7 +56,7 @@ export function WithdrawalForm() {
     );
   }
 
-  const errors = { ...clientErrors, ...(state.status === "invalid" ? state.errors : {}) };
+  const errors = step === "form" ? { ...serverErrors, ...clientErrors } : {};
   const set = (f: WithdrawalField) => (e: { target: { value: string } }) => setValues((v) => ({ ...v, [f]: e.target.value }));
   const describedBy = (f: WithdrawalField, hint?: boolean) => [hint ? `${fid(f)}-hint` : null, errors[f] ? `${fid(f)}-error` : null].filter(Boolean).join(" ") || undefined;
   const err = (f: WithdrawalField) =>
@@ -77,6 +81,7 @@ export function WithdrawalForm() {
     if (!/^\S+@\S+\.\S+$/.test(values.email.trim())) e.email = "Vul een geldig e-mailadres in, bijvoorbeeld naam@voorbeeld.nl.";
     if (values.scope === "partial" && !values.items.trim()) e.items = "Vermeld welke artikelen je herroept.";
     setClientErrors(e);
+    setServerErrors({});
     if (Object.keys(e).length) {
       focusRef.current?.focus();
       return;
@@ -134,6 +139,7 @@ export function WithdrawalForm() {
         {ORDER.map((f) => (
           <input key={f} type="hidden" name={f} value={values[f]} />
         ))}
+        <input type="hidden" name="submission_key" value={submissionKey} />
         <div className="hp-field" aria-hidden="true">
           <label htmlFor="herroep-website">Laat dit veld leeg</label>
           <input id="herroep-website" name="website" type="text" tabIndex={-1} autoComplete="off" defaultValue="" />

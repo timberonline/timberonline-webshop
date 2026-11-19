@@ -150,8 +150,9 @@ export const BODIES: Record<string, (c: InfoCtx) => ReactNode> = {
       </p>
       <H>Defect of verkeerd geleverd?</H>
       <p>
-        Dan is het geen herroeping maar een klacht over je bestelling. Lees <Link href="/info/garantie">garantie en klachten</Link>. Je wettelijke
-        rechten blijven daarbij altijd gelden.
+        Dan kun je binnen de bedenktijd herroepen zoals hierboven beschreven, maar je kunt ook een beroep doen op je wettelijke garantie: dan zorgen we
+        kosteloos voor herstel of vervanging, of volgt prijsvermindering of ontbinding. Bij een beroep op de garantie betaal je geen kosten voor
+        het terugsturen. Lees <Link href="/info/garantie">garantie en klachten</Link>.
       </p>
     </>
   ),

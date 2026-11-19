@@ -4,7 +4,7 @@ import { requireAdmin, ROLES } from "@/server/auth/admin";
 import { parseEuroToCents } from "@/lib/format";
 import { getCtx } from "@/server/services/runtime";
 import { processBolQueue } from "@/server/services/bol-sync";
-import { AddressSchema, BusinessSchema, type Confirmation } from "@/server/services/business";
+import { AddressSchema, addressMissing, businessMissing, BusinessSchema, type Confirmation } from "@/server/services/business";
 import { back, errText, str } from "../_lib";
 
 type Fields = Record<string, unknown>;
@@ -37,29 +37,32 @@ export async function saveSettingsAction(fd: FormData) {
   try {
     const s = await requireAdmin(ROLES.settings);
     const db = getCtx().db;
-    const save = (key: string, value: unknown) => db.rpc("api_setting_save", { actor: s.actor, key, value });
+    // Eerst het hele formulier controleren; daarna alles in één transactie opslaan (of niets).
     const buffer = Number(str(fd, "bol_buffer_units"));
     const minutes = Number(str(fd, "reservation_minutes"));
     if (!Number.isInteger(buffer) || buffer < 0 || buffer > 20) throw new Error("Buffer moet tussen 0 en 20 liggen");
     if (!Number.isInteger(minutes) || minutes < 31 || minutes > 120) throw new Error("Reserveringstijd moet tussen 31 en 120 minuten liggen (Stripe-sessie duurt 30 minuten)");
-    await save("bol_buffer_units", buffer);
-    await save("reservation_minutes", minutes);
-    await save("delivery_promise", str(fd, "delivery_promise"));
-    await save("tracking_info", str(fd, "tracking_info"));
-    await save("bol_requires_tracking", fd.get("bol_requires_tracking") === "on");
     const letterMax = Number(str(fd, "letter_max_weight_g"));
     if (!Number.isInteger(letterMax) || letterMax < 20 || letterMax > 2000) throw new Error("Gewichtsgrens briefpost moet tussen 20 en 2000 gram liggen");
-    await save("letter_max_weight_g", letterMax);
+
     // Bedrijfsgegevens, afzender- en retouradres: elk apart aanpasbaar en apart te bevestigen vóór livegang.
     const current = await db.rpc<Record<string, Fields & Confirmation>>("api_admin_settings", {});
     const business = group(fd, "b_", BUSINESS_KEYS, BusinessSchema, "Bedrijfsgegevens");
     if (business.vat_id) business.vat_id = business.vat_id.replace(/\s/g, "").toUpperCase();
     const sender = group(fd, "s_", ADDRESS_KEYS, AddressSchema, "Afzenderadres");
     const ret = group(fd, "r_", ADDRESS_KEYS, AddressSchema, "Retouradres");
+    const confirmB = fd.get("b_confirmed") === "on";
+    const confirmS = fd.get("s_confirmed") === "on";
+    const confirmR = fd.get("r_confirmed") === "on";
+    // Bevestigen kan alleen met volledige gegevens.
+    const missingB = confirmB ? businessMissing(business) : [];
+    if (missingB.length) throw new Error(`Bedrijfsgegevens kunnen niet worden bevestigd: ${missingB.join(", ")} ontbreekt of is ongeldig`);
+    for (const [what, a, on] of [["Afzenderadres", sender, confirmS], ["Retouradres", ret, confirmR]] as const) {
+      const miss = on ? addressMissing(a) : [];
+      if (miss.length) throw new Error(`${what} kan niet worden bevestigd: ${miss.join(", ")} ontbreekt of is ongeldig`);
+    }
     const withSource = { ...business, source: current.business_info?.source ?? null };
-    await save("business_info", { ...withSource, ...confirmation(current.business_info, withSource, fd.get("b_confirmed") === "on", s.actor) });
-    await save("sender_address", { ...sender, ...confirmation(current.sender_address, sender, fd.get("s_confirmed") === "on", s.actor) });
-    await save("return_address", { ...ret, ...confirmation(current.return_address, ret, fd.get("r_confirmed") === "on", s.actor) });
+
     const options = ["tracked", "letter"].map((code) => {
       const cost = parseEuroToCents(str(fd, `${code}_cost`) || "0");
       const freeFrom = str(fd, `${code}_free_from`) ? parseEuroToCents(str(fd, `${code}_free_from`)) : null;
@@ -77,7 +80,20 @@ export async function saveSettingsAction(fd: FormData) {
       };
     });
     if (!options.some((o) => o.enabled)) throw new Error("Minimaal één verzendoptie moet aan staan");
-    await save("shipping_options", options);
+
+    const items: { key: string; value: unknown }[] = [
+      { key: "bol_buffer_units", value: buffer },
+      { key: "reservation_minutes", value: minutes },
+      { key: "delivery_promise", value: str(fd, "delivery_promise") },
+      { key: "tracking_info", value: str(fd, "tracking_info") },
+      { key: "bol_requires_tracking", value: fd.get("bol_requires_tracking") === "on" },
+      { key: "letter_max_weight_g", value: letterMax },
+      { key: "business_info", value: { ...withSource, ...confirmation(current.business_info, withSource, confirmB, s.actor) } },
+      { key: "sender_address", value: { ...sender, ...confirmation(current.sender_address, sender, confirmS, s.actor) } },
+      { key: "return_address", value: { ...ret, ...confirmation(current.return_address, ret, confirmR, s.actor) } },
+      { key: "shipping_options", value: options },
+    ];
+    await db.rpc("api_settings_save", { actor: s.actor, items });
     await processBolQueue(getCtx()).catch(() => undefined);
     msg = { ok: "Instellingen opgeslagen" };
   } catch (e) {

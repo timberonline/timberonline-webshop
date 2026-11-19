@@ -39,7 +39,7 @@ export async function withdrawalAction(prev: WithdrawalFormState, fd: FormData):
   const ctx = getCtx();
   limiter ??= createSharedRateLimiter(ctx.db, { limit: 5, windowSeconds: 60 * 60, scope: "withdrawal" });
   const r = await submitWithdrawal(
-    { ...values, honeypot: get(fd, "website") },
+    { ...values, honeypot: get(fd, "website"), submissionKey: get(fd, "submission_key") },
     { db: ctx.db, mail: ctx.mail, appUrl: ctx.appUrl, clientKey: await clientKey(), limiter },
   );
   switch (r.status) {

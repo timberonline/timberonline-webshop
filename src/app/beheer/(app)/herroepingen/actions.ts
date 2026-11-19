@@ -26,7 +26,7 @@ export async function retryWithdrawalAckAction(fd: FormData) {
   try {
     await requireAdmin(ROLES.orders);
     const ctx = getCtx();
-    const sent = await sendWithdrawalAck({ db: ctx.db, mail: ctx.mail, appUrl: ctx.appUrl }, str(fd, "id"));
+    const sent = await sendWithdrawalAck({ db: ctx.db, mail: ctx.mail, appUrl: ctx.appUrl }, str(fd, "id"), { force: true });
     msg = sent ? { ok: "Ontvangstbevestiging verstuurd" } : { fout: "Niet verstuurd (al verstuurd, bezig of mislukt)" };
   } catch (e) {
     msg = { fout: errText(e) };

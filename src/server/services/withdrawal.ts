@@ -93,7 +93,8 @@ export function renderWithdrawalAck(w: WithdrawalRecord, seller: SellerSnapshot 
   ];
   const retLine = ret.street ? `${ret.name ?? shop}, ${addressLine(ret)}` : null;
   const next = [
-    `Stuur de artikelen binnen ${WITHDRAWAL_DAYS} dagen na vandaag terug${retLine ? ` naar: ${retLine}` : ""}. Vermeld je bestelnummer.`,
+    `Heb je de artikelen al ontvangen? Stuur ze dan binnen ${WITHDRAWAL_DAYS} dagen na vandaag terug${retLine ? ` naar: ${retLine}` : ""}. Vermeld je bestelnummer.`,
+    "Heb je de artikelen nog niet ontvangen? Je mag de zending weigeren; neem je hem toch aan, stuur de artikelen dan zo snel mogelijk na ontvangst terug. We nemen zo nodig contact met je op.",
     `We betalen het aankoopbedrag, inclusief de standaard verzendkosten, binnen ${WITHDRAWAL_DAYS} dagen na vandaag terug met hetzelfde betaalmiddel. We mogen wachten met terugbetalen tot we de artikelen hebben ontvangen of je hebt aangetoond dat je ze hebt teruggestuurd.`,
     `Meer informatie: ${appUrl}/info/retourneren`,
   ];
@@ -137,41 +138,54 @@ export type WithdrawalResult =
   | { status: "failed" }
   | { status: "received"; reference: string; submittedAt: string; acknowledged: boolean };
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 export async function submitWithdrawal(
-  input: WithdrawalValues & { honeypot?: string },
+  input: WithdrawalValues & { honeypot?: string; submissionKey?: string },
   deps: { db: Db; mail: MailDriver; appUrl: string; clientKey: string; limiter: RateLimiter },
 ): Promise<WithdrawalResult> {
   if ((input.honeypot ?? "").trim() !== "") return { status: "ignored" };
   const v = validateWithdrawal(input);
   if (!v.ok) return { status: "invalid", errors: v.errors };
   if (!(await deps.limiter.take(deps.clientKey))) return { status: "rate_limited" };
-  let saved: { ok: boolean; id: string; reference: string; submitted_at: string };
+  const submission_key = input.submissionKey && UUID.test(input.submissionKey) ? input.submissionKey : null;
+  let saved: { ok: boolean; id: string; reference: string; submitted_at: string; duplicate?: boolean };
   try {
-    saved = await deps.db.rpc("api_withdrawal_submit", { ...v.data });
+    saved = await deps.db.rpc("api_withdrawal_submit", { ...v.data, submission_key });
     if (!saved.ok) return { status: "failed" };
   } catch (e) {
     console.error("Herroeping vastleggen mislukt:", (e as Error).message);
     return { status: "failed" };
   }
-  const acknowledged = await sendWithdrawalAck(deps, saved.id);
+  // Vanaf hier is de herroeping vastgelegd: de klant krijgt altijd de referentie, ook als de bevestigingsmail (nog) niet lukt.
+  let acknowledged = false;
+  try {
+    acknowledged = (await sendWithdrawalAck(deps, saved.id)) || Boolean(saved.duplicate);
+  } catch (e) {
+    console.error("Ontvangstbevestiging herroeping mislukt:", (e as Error).message);
+  }
   return { status: "received", reference: saved.reference, submittedAt: saved.submitted_at, acknowledged };
 }
 
-/** Verstuurt de ontvangstbevestiging (hooguit één keer) en meldt de herroeping aan de webshop. Veilig te herhalen. */
-export async function sendWithdrawalAck(deps: { db: Db; mail: MailDriver; appUrl: string }, id: string): Promise<boolean> {
-  const claim = await deps.db.rpc<{ claimed: boolean; withdrawal?: WithdrawalRecord & { order_id: string | null }; seller?: SellerSnapshot }>(
+/**
+ * Verstuurt de ontvangstbevestiging (hooguit één geslaagde keer, met claimtoken) en meldt de herroeping aan de webshop.
+ * Veilig te herhalen; het periodieke onderhoud probeert mislukte of vastgelopen bevestigingen opnieuw.
+ */
+export async function sendWithdrawalAck(deps: { db: Db; mail: MailDriver; appUrl: string }, id: string, opts: { force?: boolean } = {}): Promise<boolean> {
+  const claim = await deps.db.rpc<{ claimed: boolean; token?: string; withdrawal?: WithdrawalRecord & { order_id: string | null }; seller?: SellerSnapshot }>(
     "api_withdrawal_ack_claim",
-    { id },
+    { id, force: Boolean(opts.force) },
   );
-  if (!claim.claimed || !claim.withdrawal) return false;
+  if (!claim.claimed || !claim.withdrawal || !claim.token) return false;
   const w = claim.withdrawal;
+  const token = claim.token;
   const seller = claim.seller ?? null;
   try {
     const msg = renderWithdrawalAck(w, seller, deps.appUrl);
     const res = await deps.mail.send({ ...msg, to: w.email, idempotencyKey: `withdrawal-ack:${w.id}`, replyTo: seller?.business?.email ?? undefined });
-    await deps.db.rpc("api_withdrawal_ack_complete", { id: w.id, status: res.status, provider_id: res.providerId });
+    await deps.db.rpc("api_withdrawal_ack_complete", { id: w.id, token, status: res.status, provider_id: res.providerId });
   } catch (e) {
-    await deps.db.rpc("api_withdrawal_ack_complete", { id: w.id, status: "failed", error: (e as Error).message }).catch(() => undefined);
+    await deps.db.rpc("api_withdrawal_ack_complete", { id: w.id, token, status: "failed", error: (e as Error).message }).catch(() => undefined);
     return false;
   }
   // Interne melding (best effort; de herroeping staat hoe dan ook in beheer).
@@ -186,3 +200,13 @@ export async function sendWithdrawalAck(deps: { db: Db; mail: MailDriver; appUrl
 }
 
 export type { PostalAddress };
+
+/** Periodiek onderhoud: mislukte of vastgelopen ontvangstbevestigingen opnieuw versturen. */
+export async function retryWithdrawalAcks(deps: { db: Db; mail: MailDriver; appUrl: string }) {
+  const due = await deps.db.rpc<string[]>("api_withdrawal_ack_due", { limit: 20 });
+  let sent = 0;
+  for (const id of due) {
+    if (await sendWithdrawalAck(deps, id).catch(() => false)) sent++;
+  }
+  return { due: due.length, sent };
+}

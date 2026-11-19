@@ -92,6 +92,30 @@ export const AddressSchema = z.object({
   country: z.enum(["NL", "BE"]),
 });
 
+const POSTCODE: Record<string, RegExp> = { NL: /^\d{4} ?[A-Z]{2}$/i, BE: /^\d{4}$/ };
+
+/** Ontbrekende of ongeldige adresonderdelen (leeg = volledig). */
+export function addressMissing(a: Partial<PostalAddress> | null | undefined): string[] {
+  const out: string[] = [];
+  if (!a?.name) out.push("naam");
+  if (!a?.street) out.push("straat");
+  if (!a?.house_number) out.push("huisnummer");
+  if (!a?.postal_code || !(POSTCODE[a.country ?? "NL"] ?? /./).test(a.postal_code)) out.push("postcode");
+  if (!a?.city) out.push("plaats");
+  return out;
+}
+
+/** Wat ontbreekt er aan de bedrijfsgegevens voor de wettelijke vermelding (art. 3:15d en 6:230m BW)? */
+export function businessMissing(b: Partial<BusinessInfo> | null | undefined): string[] {
+  const out = addressMissing(b ? { ...b, name: b.legal_name ?? "" } : null).filter((x) => x !== "naam");
+  if (!b?.legal_name) out.unshift("onderneming");
+  if (!b?.kvk) out.push("KvK-nummer");
+  if (!b?.vat_id) out.push("btw-identificatienummer");
+  if (!b?.phone) out.push("telefoon");
+  if (!b?.email) out.push("e-mail");
+  return out;
+}
+
 export async function loadPublicBusiness(db: Db): Promise<PublicBusiness | null> {
   try {
     return await db.rpc<PublicBusiness>("api_public_business", {});
@@ -105,7 +129,12 @@ export type LaunchItem = { key: string; label: string; done: boolean; detail?: s
 
 /** Punten die de eigenaar vóór de commerciële livegang moet bevestigen (zichtbaar in beheer). */
 export function launchChecklist(settings: Record<string, unknown>, opts: { legalTextsFinal: boolean; openPolicyChoices: number }): LaunchItem[] {
-  const conf = (key: string) => Boolean((settings[key] as Confirmation | undefined)?.confirmed_at);
+  const conf = (key: string) => {
+    const v = settings[key] as (Confirmation & Record<string, unknown>) | undefined;
+    if (!v?.confirmed_at) return false;
+    // alleen bevestigd als de gegevens ook volledig zijn
+    return key === "business_info" ? businessMissing(v as Partial<BusinessInfo>).length === 0 : addressMissing(v as Partial<PostalAddress>).length === 0;
+  };
   return [
     { key: "business_info", label: "Bedrijfsgegevens controleren en bevestigen", done: conf("business_info"), href: "/beheer/instellingen#bedrijf" },
     { key: "sender_address", label: "Afzenderadres op labels bevestigen", done: conf("sender_address"), href: "/beheer/instellingen#afzender" },
