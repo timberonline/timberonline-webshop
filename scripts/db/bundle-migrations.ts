@@ -12,9 +12,11 @@ const out = [
   "begin;",
   "create schema if not exists supabase_migrations;",
   "create table if not exists supabase_migrations.schema_migrations (version text primary key, statements text[], name text);",
-  "do $guard$ begin if exists (select 1 from supabase_migrations.schema_migrations) then raise exception 'Er zijn al migraties geregistreerd; dit script is alleen voor een leeg project'; end if; end $guard$;",
+  "do $guard$ begin if exists (select 1 from supabase_migrations.schema_migrations) or to_regclass('public.products') is not null or to_regclass('public.components') is not null then raise exception 'Project is niet leeg (migraties of tabellen aanwezig); dit script is alleen voor de eerste inrichting'; end if; end $guard$;",
 ];
 for (const m of listMigrations()) {
+  // alleen eigen, voorspelbare bestandsnamen: geen aanhalingstekens, regeleinden of andere tekens in de SQL
+  if (!/^\d{14}_[a-z0-9_]+\.sql$/.test(m.file)) throw new Error(`Ongeldige migratienaam: ${JSON.stringify(m.file)}`);
   out.push(`\n-- ===== ${m.file} =====\n${m.sql}`);
   out.push(`insert into supabase_migrations.schema_migrations (version, name, statements) values ('${m.version}', '${m.name}', array[]::text[]);`);
 }

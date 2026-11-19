@@ -116,3 +116,24 @@ describe("Codex ronde 6", () => {
     expect(results.filter((r) => r.status === "rejected").map((r) => String((r as PromiseRejectedResult).reason))).toEqual([]);
   });
 });
+
+describe("Codex ronde 7", () => {
+  it("geen deadlock tussen een order en het gelijktijdig opslaan van de samenstelling van hetzelfde artikel", async () => {
+    const bundle = await productId(t.pool, "TO-BND-IP14-CS-SP1");
+    await t.db.rpc("api_product_save", { actor: ACTOR, id: bundle, status: "active" });
+    const comps = await q<{ component_id: string; qty: number }>(t.pool, "select component_id, qty from product_components where product_id = $1", [bundle]);
+    for (let round = 0; round < 10; round++) {
+      const results = await Promise.allSettled([
+        t.db.rpc<{ ok: boolean; order_id?: string }>("api_create_web_order", { lines: [{ product_id: bundle, qty: 1 }] }),
+        t.db.rpc("api_product_save", { actor: ACTOR, id: bundle, components: comps }),
+        t.db.rpc<{ ok: boolean; order_id?: string }>("api_create_web_order", { lines: [{ product_id: bundle, qty: 1 }] }),
+      ]);
+      const errors = results.filter((r) => r.status === "rejected").map((r) => String((r as PromiseRejectedResult).reason));
+      expect(errors).toEqual([]);
+      for (const r of results) {
+        const v = (r as PromiseFulfilledResult<{ order_id?: string }>).value;
+        if (v?.order_id) await t.db.rpc("api_release_order", { order_id: v.order_id, status: "expired" });
+      }
+    }
+  });
+});
