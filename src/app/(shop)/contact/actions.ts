@@ -1,8 +1,10 @@
 "use server";
 import { headers } from "next/headers";
 import { getCtx } from "@/server/services/runtime";
+import { loadPublicBusiness } from "@/server/services/business";
 import {
   contactInputFromFormData,
+  contactRecipient,
   createSharedRateLimiter,
   EMPTY_CONTACT_VALUES,
   type RateLimiter,
@@ -40,7 +42,9 @@ export async function contactAction(prev: ContactFormState, formData: FormData):
   const values: ContactValues = { name: input.name, email: input.email, order: input.order, subject: input.subject, message: input.message };
   const seq = (prev?.seq ?? 0) + 1;
   const ctx = getCtx();
-  const result = await submitContact(input, { mail: ctx.mail, clientKey: await clientKey(), limiter: sharedLimiter(ctx.db) });
+  const business = (await loadPublicBusiness(ctx.db))?.business;
+  const recipient = contactRecipient(process.env, business?.email);
+  const result = await submitContact(input, { mail: ctx.mail, clientKey: await clientKey(), limiter: sharedLimiter(ctx.db), recipient });
   switch (result.status) {
     case "invalid":
       return { status: "invalid", errors: result.errors, values, seq };

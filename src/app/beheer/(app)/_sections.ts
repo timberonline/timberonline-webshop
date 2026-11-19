@@ -8,6 +8,7 @@ import { mayAccess, type AdminArea, type Role } from "@/server/auth/admin";
 export const ADMIN_SECTIONS: { href: string; label: string; area: AdminArea }[] = [
   { href: "/beheer", label: "Overzicht", area: "shipping" },
   { href: "/beheer/orders", label: "Orders", area: "orders" },
+  { href: "/beheer/herroepingen", label: "Herroepingen", area: "orders" },
   { href: "/beheer/verzendingen", label: "Verzendingen", area: "shipping" },
   { href: "/beheer/artikelen", label: "Artikelen en prijzen", area: "catalog" },
   { href: "/beheer/voorraad", label: "Voorraad", area: "catalog" },

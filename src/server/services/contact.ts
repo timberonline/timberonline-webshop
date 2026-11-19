@@ -82,19 +82,23 @@ export function validateContact(input: ContactValues): { ok: true; data: Contact
   return { ok: false, errors };
 }
 
-/** Ontvanger van contactberichten: CONTACT_TO, anders MAIL_REPLY_TO. Null = formulier nog niet actief. */
-export function contactRecipient(source: Record<string, string | undefined> = process.env): string | null {
-  for (const key of ["CONTACT_TO", "MAIL_REPLY_TO"]) {
-    const v = source[key]?.trim();
-    if (v) return v;
-  }
-  return null;
+/**
+ * Ontvanger van contactberichten: CONTACT_TO, anders het webshopadres uit de bedrijfsgegevens, anders MAIL_REPLY_TO.
+ * Null = formulier nog niet actief.
+ */
+export function contactRecipient(source: Record<string, string | undefined> = process.env, businessEmail?: string | null): string | null {
+  const own = source.CONTACT_TO?.trim();
+  if (own) return own;
+  if (businessEmail && z.email().safeParse(businessEmail).success) return businessEmail;
+  return source.MAIL_REPLY_TO?.trim() || null;
 }
 
-/** Publiek e-mailadres voor klanten (NEXT_PUBLIC_CONTACT_EMAIL), alleen als het een geldig adres is. */
-export function publicContactEmail(source: Record<string, string | undefined> = process.env): string | null {
-  const v = source.NEXT_PUBLIC_CONTACT_EMAIL?.trim();
-  return v && z.email().safeParse(v).success ? v : null;
+/** Publiek e-mailadres voor klanten: het webshopadres uit de bedrijfsgegevens, anders NEXT_PUBLIC_CONTACT_EMAIL. */
+export function publicContactEmail(source: Record<string, string | undefined> = process.env, businessEmail?: string | null): string | null {
+  for (const v of [businessEmail?.trim(), source.NEXT_PUBLIC_CONTACT_EMAIL?.trim()]) {
+    if (v && z.email().safeParse(v).success) return v;
+  }
+  return null;
 }
 
 /** Eenvoudige rate limit per sleutel (IP) in het geheugen van deze serverinstantie. */

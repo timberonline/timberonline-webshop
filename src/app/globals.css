@@ -249,6 +249,13 @@ h1, h2, h3 { overflow-wrap: break-word; }
 
 .site-footer .footer-cols { display: grid; gap: 8px 32px; grid-template-columns: 1fr; margin-bottom: 16px; }
 @media (min-width: 600px) { .site-footer .footer-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 900px) { .site-footer .footer-cols { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.site-footer .footer-address { font-style: normal; line-height: 1.7; overflow-wrap: anywhere; }
+.site-footer .footer-address a { display: inline-block; min-height: 24px; }
 .site-footer .footer-cols nav { display: block; margin: 0; }
 .site-footer .footer-title { font-size: 1rem; color: var(--to-white); margin: 0 0 4px; }
 .site-footer .footer-cols ul { list-style: none; margin: 0; padding: 0; }
+
+/* Juridische teksten: nog niet vastgestelde beleidskeuzes */
+.legal-text .policy-choice mark { background: var(--to-warning-bg); color: inherit; padding: 0 2px; border-radius: 3px; }
+.legal-text .policy-choice .badge { font-size: .75rem; vertical-align: middle; }

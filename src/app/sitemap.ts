@@ -25,6 +25,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     console.error("Sitemap: catalogus niet geladen:", e instanceof Error ? e.message : e);
   }
   entries.push({ url: url("/contact"), changeFrequency: "monthly", priority: 0.4 });
+  entries.push({ url: url("/herroepen"), changeFrequency: "yearly", priority: 0.2 });
   for (const slug of INFO_SLUGS) entries.push({ url: url(`/info/${slug}`), changeFrequency: "monthly", priority: 0.3 });
   return entries;
 }

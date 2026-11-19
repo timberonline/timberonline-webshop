@@ -206,8 +206,13 @@ export function CartView({ cancelledOrder }: { cancelledOrder: string | null }) 
           {paying ? "Betaalpagina openen…" : "Afrekenen"}
         </button>
         <p className="small muted" style={{ marginTop: 10 }}>
-          Je rekent af als gast bij Stripe met iDEAL | Wero of een andere beschikbare methode. Daar vul je ook je bezorgadres in. Je artikelen zijn 30 minuten
-          voor je gereserveerd.
+          We leveren in Nederland en België. Je rekent af als gast bij Stripe met iDEAL | Wero of een andere beschikbare methode. Daar vul je ook je
+          bezorgadres in. Je artikelen zijn 30 minuten voor je gereserveerd.
+        </p>
+        <p className="small" style={{ marginTop: 6 }}>
+          Je bestelling is pas definitief als je op de betaalpagina op <strong>Betalen</strong> klikt. Op je bestelling zijn onze{" "}
+          <Link href="/info/voorwaarden">algemene voorwaarden</Link> van toepassing. Je hebt <Link href="/info/retourneren">14 dagen bedenktijd</Link>.
+          Lees ook hoe we met je <Link href="/info/privacy">gegevens</Link> omgaan.
         </p>
       </aside>
     </div>

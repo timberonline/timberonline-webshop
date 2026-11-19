@@ -78,10 +78,11 @@ test("bol: artikel activeren, simuleer bol-order en zie sync", async ({ page }, 
 test("verzendingen: label, dag-PDF, overdracht en gesimuleerde status", async ({ page, request }, info) => {
   test.skip(info.project.name !== "desktop");
   await page.goto("/beheer/instellingen");
-  await page.getByLabel("Straat").fill("Voorbeeldweg");
-  await page.getByLabel("Huisnummer").fill("1");
-  await page.getByLabel("Postcode").fill("1000 AA");
-  await page.getByLabel("Plaats").fill("Amsterdam");
+  const sender = page.locator("#afzender");
+  await sender.getByLabel("Straat").fill("Voorbeeldweg");
+  await sender.getByLabel("Huisnummer").fill("1");
+  await sender.getByLabel("Postcode").fill("1000 AA");
+  await sender.getByLabel("Plaats").fill("Amsterdam");
   await page.getByRole("button", { name: "Instellingen opslaan" }).click();
   await expect(page.locator(".notice-ok")).toContainText("Instellingen opgeslagen");
   await page.goto("/beheer/verzendingen");

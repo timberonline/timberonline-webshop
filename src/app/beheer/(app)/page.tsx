@@ -6,6 +6,8 @@ import { dateTime } from "@/lib/format";
 import { mayAccess, requireAdminPage, ROLES } from "@/server/auth/admin";
 import { getDb } from "@/server/db";
 import { integrationStatus } from "@/server/services/runtime";
+import { launchChecklist } from "@/server/services/business";
+import { LEGAL_TEXTS_FINAL, OPEN_POLICY_CHOICES } from "@/lib/legal";
 
 type Overview = {
   orders_pending: number;
@@ -23,10 +25,18 @@ type Overview = {
 export default async function Dashboard() {
   const s = await requireAdminPage(ROLES.shipping);
   await connection();
-  const o = await getDb().rpc<Overview>("api_admin_overview", {});
-  const integ = integrationStatus();
+  const db = getDb();
   // Het overzicht is ook voor de rol verzending; toon alleen tegels en meldingen die naar een toegestaan onderdeel leiden.
   const showOrders = mayAccess(s.role, "orders");
+  const showLaunch = mayAccess(s.role, "settings");
+  const [o, openWithdrawals, settings] = await Promise.all([
+    db.rpc<Overview>("api_admin_overview", {}),
+    showOrders ? db.rpc<unknown[]>("api_admin_withdrawals", { status: "received" }) : Promise.resolve([]),
+    showLaunch ? db.rpc<Record<string, unknown>>("api_admin_settings", {}) : Promise.resolve({}),
+  ]);
+  const integ = integrationStatus();
+  const launch = showLaunch ? launchChecklist(settings, { legalTextsFinal: LEGAL_TEXTS_FINAL, openPolicyChoices: OPEN_POLICY_CHOICES.length }) : [];
+  const launchOpen = launch.filter((i) => !i.done);
   const kpis = [
     { l: "Te verzenden", v: o.orders_to_ship, href: "/beheer/verzendingen" },
     { l: "Wacht op betaling", v: o.orders_pending, href: "/beheer/orders?payment_status=pending" },
@@ -35,6 +45,7 @@ export default async function Dashboard() {
     { l: "Gereserveerd (stuks)", v: o.stock_totals.reserved, href: "/beheer/voorraad" },
   ].filter((k) => mayOpen(s.role, k.href));
   const problems = [
+    openWithdrawals.length && { t: `${openWithdrawals.length} herroeping(en) ontvangen: retour en terugbetaling afhandelen`, href: "/beheer/herroepingen" },
     o.bol_failed && { t: `${o.bol_failed} mislukte bol-update(s)`, href: "/beheer/bol" },
     o.shipment_exceptions && { t: `${o.shipment_exceptions} verzenduitzondering(en)`, href: "/beheer/verzendingen" },
     o.email_failed && { t: `${o.email_failed} mislukte of vastgelopen e-mail(s)`, href: "/beheer/orders?mail=1" },
@@ -66,6 +77,22 @@ export default async function Dashboard() {
             {problems.map((p) => (
               <li key={p.t}>
                 <Link href={p.href}>{p.t}</Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {launchOpen.length ? (
+        <section className="notice notice-warn" aria-labelledby="livegang">
+          <h2 id="livegang" style={{ fontSize: "1.125rem" }}>
+            Vóór commerciële livegang bevestigen
+          </h2>
+          <ul style={{ margin: 0 }}>
+            {launchOpen.map((i) => (
+              <li key={i.key}>
+                {i.href ? <Link href={i.href}>{i.label}</Link> : i.label}
+                {i.detail ? ` (${i.detail})` : null}
               </li>
             ))}
           </ul>

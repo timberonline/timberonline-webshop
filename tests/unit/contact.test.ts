@@ -126,6 +126,16 @@ describe("contactformulier: verzenden", () => {
     expect(publicContactEmail({})).toBeNull();
     expect(publicContactEmail({ NEXT_PUBLIC_CONTACT_EMAIL: "geen adres" })).toBeNull();
     expect(publicContactEmail({ NEXT_PUBLIC_CONTACT_EMAIL: " info@example.com " })).toBe("info@example.com");
+     // Webshopadres uit de bedrijfsgegevens gaat vóór de omgevingsvariabele; een ongeldig adres valt terug
+    expect(publicContactEmail({ NEXT_PUBLIC_CONTACT_EMAIL: "info@example.com" }, "shop@example.com")).toBe("shop@example.com");
+    expect(publicContactEmail({ NEXT_PUBLIC_CONTACT_EMAIL: "info@example.com" }, "geen adres")).toBe("info@example.com");
+  });
+
+  it("stuurt contactberichten naar CONTACT_TO, anders het webshopadres, anders MAIL_REPLY_TO", () => {
+    expect(contactRecipient({ CONTACT_TO: "intern@example.com" }, "shop@example.com")).toBe("intern@example.com");
+    expect(contactRecipient({ MAIL_REPLY_TO: "antwoord@example.com" }, "shop@example.com")).toBe("shop@example.com");
+    expect(contactRecipient({ MAIL_REPLY_TO: "antwoord@example.com" }, "geen adres")).toBe("antwoord@example.com");
+    expect(contactRecipient({}, null)).toBeNull();
   });
 
   it("meldt een mislukte verzending zonder de inhoud te loggen", async () => {

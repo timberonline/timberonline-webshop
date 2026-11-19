@@ -34,7 +34,10 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/be
   const { id } = await params;
   const sp = await searchParams;
   if (!/^[0-9a-f-]{36}$/.test(id)) notFound();
-  const o = await getDb().rpc<Order | null>("api_admin_order", { id });
+  const [o, withdrawals] = await Promise.all([
+    getDb().rpc<Order | null>("api_admin_order", { id }),
+    getDb().rpc<{ id: string; reference: string; submitted_at: string; scope: string; items: string | null; status: string }[]>("api_admin_withdrawals", { order_id: id }),
+  ]);
   if (!o) notFound();
   const shipped = o.shipments.some((s) => ["handed_over", "in_transit", "ready_for_pickup", "delivered"].includes(s.status));
   const refundable = o.channel === "web" && !!o.stripe_payment_intent_id && o.total_cents - o.refunded_cents > 0;
@@ -50,6 +53,17 @@ export default async function OrderPage({ params, searchParams }: PageProps<"/be
       </div>
       <Flash sp={sp} />
       {o.needs_attention ? <p className="notice notice-warn">{o.attention_reason}</p> : null}
+      {withdrawals.length ? (
+        <div className="notice notice-warn">
+          <strong>Herroeping ontvangen:</strong>{" "}
+          {withdrawals.map((w, i) => (
+            <span key={w.id}>
+              {i ? "; " : ""}
+              <Link href="/beheer/herroepingen">{w.reference}</Link> op {dateTime(w.submitted_at)} ({w.scope === "all" ? "hele bestelling" : `deel: ${w.items ?? ""}`}) · {w.status === "received" ? "open" : w.status === "handled" ? "afgehandeld" : "afgewezen"}
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", marginBottom: 16 }}>
         <section className="card" aria-labelledby="status">

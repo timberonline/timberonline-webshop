@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
 import type { Ctx } from "./context";
+import { loadPublicBusiness, sellerName } from "./business";
 import type { Quote } from "./types";
 
 export type CheckoutInput = { lines: { product_id: string; qty: number }[]; shipping_option: string };
@@ -13,6 +14,11 @@ const MESSAGES: Record<string, string> = {
   insufficient_stock: "Er is niet genoeg voorraad voor je winkelwagen. Pas de aantallen aan.",
   stripe_error: "De betaalpagina kon niet worden geopend. Probeer het opnieuw.",
 };
+
+/** Tekst boven de betaalknop van Stripe Checkout (max. 1200 tekens). */
+export function checkoutSubmitMessage(seller: string, appUrl: string) {
+  return `Met "Betalen" plaats je een bestelling met betalingsverplichting bij ${seller}. Onze algemene voorwaarden (${appUrl}/info/voorwaarden) zijn van toepassing. Je hebt 14 dagen bedenktijd na ontvangst (${appUrl}/info/retourneren).`;
+}
 
 export async function startCheckout(ctx: Ctx, input: CheckoutInput): Promise<CheckoutResult> {
   if (!ctx.stripe) return { ok: false, error: "payments_unavailable", message: MESSAGES.payments_unavailable };
@@ -28,6 +34,7 @@ export async function startCheckout(ctx: Ctx, input: CheckoutInput): Promise<Che
   }
 
   const q = res.quote;
+  const seller = sellerName((await loadPublicBusiness(ctx.db))?.business);
   try {
     const params: Stripe.Checkout.SessionCreateParams = {
       mode: "payment",
@@ -57,6 +64,8 @@ export async function startCheckout(ctx: Ctx, input: CheckoutInput): Promise<Che
         },
       ],
       shipping_address_collection: { allowed_countries: ["NL", "BE"] },
+      // Vlak boven de betaalknop: bestelling met betalingsverplichting, voorwaarden en bedenktijd (art. 6:230v BW).
+      custom_text: { submit: { message: checkoutSubmitMessage(seller, ctx.appUrl) } },
       expires_at: Math.floor(Date.now() / 1000) + 31 * 60, // Stripe eist ≥ 30 min; reservering loopt 35 min
       success_url: `${ctx.appUrl}/bestelling/bedankt?order=${res.order_id}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${ctx.appUrl}/winkelwagen?geannuleerd=${res.order_id}`,

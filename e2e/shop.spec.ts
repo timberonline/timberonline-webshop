@@ -135,7 +135,7 @@ test("categoriepagina toont alleen producten van die categorie, met kruimelpad e
 });
 
 test("contactformulier: validatiefouten worden gemeld en gekoppeld aan de velden", async ({ page }, info) => {
-  await page.goto("/info/retourneren");
+  await page.goto("/info/verzending");
   await page.getByRole("link", { name: "Neem contact met ons op" }).click();
   await expect(page).toHaveURL(/\/contact$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Contact");
@@ -184,6 +184,45 @@ test("contactformulier: validatiefouten worden gemeld en gekoppeld aan de velden
   await noHorizontalScroll(page);
   await noSeriousA11yIssues(page);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/shop-contact-${info.project.name}.png`, fullPage: true });
+});
+
+test("herroepen: online herroepingsfunctie met bevestigingsstap en ontvangstbevestiging", async ({ page }, info) => {
+  await page.goto("/");
+  // Doorlopend beschikbaar en duidelijk benoemd in de footer
+  await page.getByRole("contentinfo").getByRole("link", { name: "Hier de overeenkomst herroepen" }).click();
+  await expect(page).toHaveURL(/\/herroepen$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Hier de overeenkomst herroepen");
+  await page.getByRole("button", { name: "Verder naar bevestigen" }).click();
+  await expect(page.locator(".error-summary")).toContainText("Vul je naam in.");
+  await page.getByRole("textbox", { name: "Naam", exact: true }).fill("E2E Klant");
+  await page.getByRole("textbox", { name: "Bestelnummer", exact: true }).fill(`TO9${String(Date.now()).slice(-5)}`);
+  await page.getByRole("textbox", { name: "E-mailadres voor de bevestiging", exact: true }).fill("e2e-herroep@example.test");
+  await noSeriousA11yIssues(page);
+  await page.getByRole("button", { name: "Verder naar bevestigen" }).click();
+  await expect(page.getByRole("heading", { name: "Controleer en bevestig je herroeping" })).toBeVisible();
+  await page.getByRole("button", { name: "Herroeping bevestigen" }).click();
+  await expect(page.getByRole("status")).toContainText("Je herroeping is ontvangen");
+  await expect(page.getByRole("status")).toContainText(/HR-\d{8}-[0-9A-F]{6}/);
+  await noHorizontalScroll(page);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/shop-herroepen-${info.project.name}.png`, fullPage: true });
+});
+
+test("bedrijfsgegevens in footer en contact, juridische teksten met gemarkeerde beleidskeuzes", async ({ page }) => {
+  await page.goto("/contact");
+  const footer = page.getByRole("contentinfo");
+  await expect(footer).toContainText("KvK 88562700");
+  await expect(footer).toContainText("Btw-id NL004626847B65");
+  await expect(footer).toContainText("Abel Tasmanstraat 22, 6413 SX Heerlen");
+  await expect(page.getByRole("region", { name: "Bedrijfsgegevens" })).toContainText("Timber Services");
+  await page.goto("/info/voorwaarden");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Algemene voorwaarden");
+  await expect(page.locator(".policy-choice").first()).toBeVisible();
+  await noSeriousA11yIssues(page);
+  for (const slug of ["verzending", "betalen", "retourneren", "herroepingsformulier", "garantie", "privacy", "cookies"]) {
+    const res = await page.goto(`/info/${slug}`);
+    expect(res?.status(), slug).toBe(200);
+  }
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Cookies");
 });
 
 test("seo: robots.txt, sitemap en productmetadata", async ({ page, request }) => {

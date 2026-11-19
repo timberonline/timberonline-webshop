@@ -1,3 +1,4 @@
+import type { SellerSnapshot } from "./business";
 export type QuoteLine = {
   product_id: string;
   sku: string;
@@ -82,4 +83,8 @@ export type OrderForEmail = {
   address: Record<string, string | null>;
   lines: { title: string; sku: string; qty: number; unit_price_cents: number; discount_cents: number; line_total_cents: number }[];
   shipment: { carrier: string; tracking_code: string | null; tracking_url: string | null; status: string } | null;
+  /** Verkopergegevens zoals vastgelegd bij het aanmaken van de order (historie blijft ongewijzigd). */
+  seller?: SellerSnapshot | null;
+  paid_at?: string | null;
+  payment_method?: string | null;
 };
