@@ -137,3 +137,28 @@ describe("Codex ronde 7", () => {
     }
   });
 });
+
+describe("lockvolgorde order ↔ artikel opslaan (CI-deadlock, deterministisch)", () => {
+  it("laat een opslaande samenstelling eerst op de onderdelen wachten, nooit met een bol_sync-rij in handen", async () => {
+    const set = await productId(t.pool, "TO-SP2-IP14-STD"); // deelt onderdeel C-SP-IP14-STD met de bundel
+    await t.db.rpc("api_product_save", { actor: ACTOR, id: set, bol_enabled: true, bol_title_fix_required: false, bol_offer_id: "o-det" });
+    const bundle = await productId(t.pool, "TO-BND-IP14-CS-SP2");
+    const comps = await q<{ component_id: string; qty: number }>(t.pool, "select component_id, qty from product_components where product_id = $1", [bundle]);
+    const a = await t.pool.connect();
+    try {
+      await a.query("begin");
+      await a.query("set local lock_timeout = '5s'");
+      // A gedraagt zich als het orderpad: eerst de onderdelen vergrendelen
+      await a.query("select id from components where id = any($1::uuid[]) order by id for update", [comps.map((c) => c.component_id)]);
+      // B slaat de bundel op terwijl A de onderdelen vasthoudt
+      const save = t.db.rpc("api_product_save", { actor: ACTOR, id: bundle, components: comps });
+      await new Promise((r) => setTimeout(r, 400));
+      // A werkt daarna de bol-rij bij (zoals mark_bol_stock_dirty in het orderpad): mag niet op B wachten
+      await a.query("update bol_sync set desired_version = desired_version where product_id = $1 and kind = 'stock'", [set]);
+      await a.query("commit");
+      await expect(save).resolves.toMatchObject({ ok: true });
+    } finally {
+      a.release();
+    }
+  });
+});
