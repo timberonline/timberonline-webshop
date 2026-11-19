@@ -162,3 +162,32 @@ describe("lockvolgorde order ↔ artikel opslaan (CI-deadlock, deterministisch)"
     }
   });
 });
+
+describe("Codex ronde 8: verloopsweeper vergrendelt bol-rijen gesorteerd", () => {
+  it("deadlockt niet met een transactie die de bol-rijen in gesorteerde volgorde neemt", async () => {
+    const skus = ["TO-SP2-IP11PM-PRV", "TO-SP2-IP12-PRV"];
+    const ids = await Promise.all(skus.map((s) => productId(t.pool, s)));
+    for (const id of ids) await t.db.rpc("api_product_save", { actor: ACTOR, id, bol_enabled: true, bol_offer_id: `o-sw-${id.slice(0, 6)}` });
+    const [lo, hi] = [...ids].sort();
+    // order 1 (oudste) gebruikt het artikel met de 'hoge' bol-rij, order 2 het artikel met de 'lage'
+    const o1 = await t.db.rpc<{ order_id: string }>("api_create_web_order", { lines: [{ product_id: hi, qty: 1 }] });
+    const o2 = await t.db.rpc<{ order_id: string }>("api_create_web_order", { lines: [{ product_id: lo, qty: 1 }] });
+    await t.pool.query("update orders set reserved_until = now() - interval '10 minutes' where id = $1", [o1.order_id]);
+    await t.pool.query("update orders set reserved_until = now() - interval '5 minutes' where id = $1", [o2.order_id]);
+    const a = await t.pool.connect();
+    try {
+      await a.query("begin");
+      await a.query("set local lock_timeout = '5s'");
+      await a.query("update bol_sync set desired_version = desired_version where product_id = $1 and kind = 'stock'", [lo]);
+      const sweep = t.db.rpc<{ expired: number }>("api_expire_stale_orders", { limit: 10 });
+      await new Promise((r) => setTimeout(r, 400));
+      await a.query("update bol_sync set desired_version = desired_version where product_id = $1 and kind = 'stock'", [hi]);
+      await a.query("commit");
+      await expect(sweep).resolves.toMatchObject({ ok: true });
+    } finally {
+      a.release();
+    }
+    const rows = await q<{ payment_status: string }>(t.pool, "select payment_status from orders where id = any($1::uuid[]) order by created_at", [[o1.order_id, o2.order_id]]);
+    expect(rows.map((r) => r.payment_status)).toEqual(["expired", "expired"]);
+  });
+});
