@@ -209,17 +209,20 @@ export type { PostalAddress };
  * een trage mailprovider de andere onderhoudstaken niet ophoudt; de rest volgt bij de volgende ronde.
  */
 export async function retryWithdrawalAcks(deps: { db: Db; mail: MailDriver; appUrl: string }, opts: { limit?: number; budgetMs?: number } = {}) {
-  const due = await deps.db.rpc<string[]>("api_withdrawal_ack_due", { limit: opts.limit ?? 5 });
   const deadline = Date.now() + (opts.budgetMs ?? 15_000);
+  const within = <T,>(p: Promise<T>, fallback: T) => {
+    const left = deadline - Date.now();
+    if (left <= 0) return Promise.resolve(fallback);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([p, new Promise<T>((resolve) => (timer = setTimeout(() => resolve(fallback), left)))]).finally(() => clearTimeout(timer));
+  };
+  // Ook het ophalen valt binnen de tijdsgrens. Een verzending die na de grens doorloopt, wordt niet dubbel afgeleverd
+  // (vaste idempotentiesleutel bij Resend) en de claim verloopt na 5 minuten, waarna een volgende ronde het afrondt.
+  const due = await within(deps.db.rpc<string[]>("api_withdrawal_ack_due", { limit: opts.limit ?? 5 }), [] as string[]);
   let sent = 0;
   for (const id of due) {
-    const left = deadline - Date.now();
-    if (left <= 0) break;
-    const ok = await Promise.race([
-      sendWithdrawalAck(deps, id).catch(() => false),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), left)),
-    ]);
-    if (ok) sent++;
+    if (Date.now() >= deadline) break;
+    if (await within(sendWithdrawalAck(deps, id).catch(() => false), false)) sent++;
   }
   return { due: due.length, sent };
 }

@@ -12,19 +12,40 @@ const fid = (f: WithdrawalField) => `herroep-${f}`;
 const KEY_STORE = "to-herroep-sleutels";
 const KEY_TTL_MS = 30 * 60_000;
 
+type KeyStore = Record<string, { k: string; t: number }>;
+
+function readStore(): KeyStore {
+  const store = JSON.parse(sessionStorage.getItem(KEY_STORE) ?? "{}") as KeyStore;
+  const now = Date.now();
+  for (const [f, e] of Object.entries(store)) if (now - e.t > KEY_TTL_MS) delete store[f];
+  return store;
+}
+
+/** Verlopen sleutels opruimen (bij openen van de pagina). */
+function purgeKeys() {
+  try {
+    const store = readStore();
+    if (Object.keys(store).length) sessionStorage.setItem(KEY_STORE, JSON.stringify(store));
+    else sessionStorage.removeItem(KEY_STORE);
+  } catch {
+    /* geen opslag beschikbaar */
+  }
+}
+
 /**
  * Sleutel per inhoud van de verklaring, 30 minuten bewaard in deze browsertab (sessionStorage). Zelfde inhoud na
- * herladen = zelfde sleutel; andere inhoud = nieuwe sleutel. Zonder opslag: steeds een nieuwe sleutel.
+ * herladen = zelfde sleutel; elke wijziging (ook hoofdletters in vrije tekst) = nieuwe sleutel. Er wordt alleen een
+ * SHA-256-afdruk van de inhoud bewaard, geen persoonsgegevens. Zonder opslag: steeds een nieuwe sleutel.
  */
-function keyFor(v: WithdrawalValues) {
-  const fp = [v.name, v.email, v.order_number, v.scope, v.items, v.note].map((x) => x.trim().toLowerCase()).join("\u0001");
-  const now = Date.now();
+async function keyFor(v: WithdrawalValues) {
+  const content = [v.name.trim(), v.email.trim().toLowerCase(), v.order_number.trim().toUpperCase(), v.scope, v.items.trim(), v.note.trim()].join("\u0001");
   try {
-    const store = JSON.parse(sessionStorage.getItem(KEY_STORE) ?? "{}") as Record<string, { k: string; t: number }>;
-    for (const [f, e] of Object.entries(store)) if (now - e.t > KEY_TTL_MS) delete store[f];
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
+    const fp = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+    const store = readStore();
     const hit = store[fp];
     const k = hit?.k ?? crypto.randomUUID();
-    store[fp] = { k, t: hit?.t ?? now };
+    store[fp] = { k, t: hit?.t ?? Date.now() };
     sessionStorage.setItem(KEY_STORE, JSON.stringify(store));
     return k;
   } catch {
@@ -59,6 +80,10 @@ export function WithdrawalForm() {
   useEffect(() => {
     if (step === "confirm") focusRef.current?.focus();
   }, [step]);
+
+  useEffect(() => {
+    purgeKeys();
+  }, []);
 
   if (state.status === "received") {
     return (
@@ -97,7 +122,7 @@ export function WithdrawalForm() {
   );
 
   // Stap 1 → 2: alleen eenvoudige controle in de browser; de server controleert alles opnieuw.
-  const review = () => {
+  const review = async () => {
     const e: Partial<Record<WithdrawalField, string>> = {};
     if (!values.name.trim()) e.name = "Vul je naam in.";
     if (!values.order_number.trim()) e.order_number = "Vul je bestelnummer in.";
@@ -109,7 +134,7 @@ export function WithdrawalForm() {
       focusRef.current?.focus();
       return;
     }
-    setSubmissionKey(keyFor(values));
+    setSubmissionKey(await keyFor(values));
     setStep("confirm");
   };
 
@@ -188,7 +213,7 @@ export function WithdrawalForm() {
       style={{ marginTop: 16 }}
       onSubmit={(e) => {
         e.preventDefault();
-        review();
+        void review();
       }}
       aria-describedby="herroep-verplicht"
     >
