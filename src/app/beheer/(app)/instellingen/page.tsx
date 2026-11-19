@@ -92,7 +92,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/beheer/
       <section className="card" style={{ marginTop: 24 }}>
         <h2 style={{ fontSize: "1.125rem" }}>Koppelingen</h2>
         <dl className="dl">
-          {Object.entries(integ).map(([k, v]) => (
+          {Object.entries(integ).filter(([, v]) => typeof v === "string").map(([k, v]) => (
             <Fragment key={k}>
               <dt>{k}</dt>
               <dd>{v}</dd>

@@ -88,3 +88,31 @@ describe("teruggevonden bol-aanbod (laag)", () => {
     expect(r).toEqual({ status: "synced", last_error: null });
   });
 });
+
+describe("Codex ronde 6", () => {
+  it("weigert een provider-ID die bij een andere order hoort en laat die order ongemoeid", async () => {
+    const a = await paidOrder();
+    const b = await paidOrder();
+    await t.db.rpc("api_refund_provider_update", { provider_refund_id: "re_ander", payment_intent_id: b.pi, amount_cents: 500, status: "succeeded" });
+    const begin = await t.db.rpc<{ refund_id: string }>("api_refund_begin", { actor: ACTOR, order_id: a.id, amount_cents: 500, idempotency_key: `x-${a.id}` });
+    await expect(t.db.rpc("api_refund_finish", { refund_id: begin.refund_id, status: "succeeded", provider_refund_id: "re_ander" })).rejects.toThrow(/andere order/);
+    const rows = await q<{ order_id: string }>(t.pool, "select order_id from refunds where provider_refund_id = 're_ander'");
+    expect(rows).toEqual([{ order_id: b.id }]);
+  });
+
+  it("slaat artikelen met gedeelde onderdelen gelijktijdig op zonder deadlock", async () => {
+    const skus = ["TO-SP2-IP14-STD", "TO-SP2-IP14PM-STD", "TO-SP2-IP15P-PRV", "TO-SP2-IP15PM-PRV"];
+    const ids = await Promise.all(skus.map((s) => productId(t.pool, s)));
+    for (const id of ids) await t.db.rpc("api_product_save", { actor: ACTOR, id, bol_enabled: true, bol_title_fix_required: false, bol_offer_id: `o-par-${id.slice(0, 6)}` });
+    const bundle = await productId(t.pool, "TO-BND-IP14-CS-SP2");
+    const comps = await q<{ component_id: string; qty: number }>(t.pool, "select component_id, qty from product_components where product_id = $1", [bundle]);
+    const results = await Promise.allSettled(
+      Array.from({ length: 6 }, (_, i) =>
+        i % 2 === 0
+          ? t.db.rpc("api_product_save", { actor: ACTOR, id: bundle, components: comps })
+          : t.db.rpc("api_product_save", { actor: ACTOR, id: ids[i % ids.length], bol_buffer_units: String(i % 3) }),
+      ),
+    );
+    expect(results.filter((r) => r.status === "rejected").map((r) => String((r as PromiseRejectedResult).reason))).toEqual([]);
+  });
+});

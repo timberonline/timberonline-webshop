@@ -40,6 +40,8 @@ export function integrationStatus() {
     stripe: !key ? "niet geconfigureerd" : /^(sk|rk)_test_/.test(key) ? "testmodus" : env.stripeLiveEnabled() ? "LIVE" : "live sleutel geweigerd",
     mail: env.mailMode() === "resend" && env.resendApiKey() ? (env.mailTestRecipient() ? "Resend (testontvanger)" : "Resend") : "gesimuleerd",
     bol: env.bolMode() === "live" && env.bolClientId() ? "live" : "gesimuleerd",
+    /** Gesimuleerde scans zijn alleen toegestaan zolang geen enkele vervoerder live staat (zelfde regel als simulateCarrierEvent). */
+    carriersSimulated: env.dhlMode() !== "live" && env.postnlMode() !== "live",
     carriers: `DHL ${env.dhlMode() === "live" ? "live (nog niet geïmplementeerd)" : "gesimuleerd"} · PostNL ${env.postnlMode() === "live" ? "live (nog niet geïmplementeerd)" : "gesimuleerd"} · briefpost adreslabel`,
     ai: env.aiProvider() === "openai" && env.openaiApiKey() ? `OpenAI (${env.openaiModel()})` : "testimplementatie (regelgebaseerd)",
   };

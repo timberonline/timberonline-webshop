@@ -28,7 +28,7 @@ export default async function ShipmentsPage({ searchParams }: PageProps<"/beheer
   const sp = await searchParams;
   const date = typeof sp.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(sp.date) ? sp.date : undefined;
   const v = await getDb().rpc<View>("api_admin_shipments", date ? { date } : {});
-  const simulated = integrationStatus().carriers.startsWith("gesimuleerd");
+  const simulated = integrationStatus().carriersSimulated;
   // De rol verzending mag geen orderdetails (betaling, klantgegevens) openen: dan alleen het ordernummer zonder link.
   const orderRef = (id: string, number: string) => (mayAccess(session.role, "orders") ? <Link href={`/beheer/orders/${id}`}>{number}</Link> : <>{number}</>);
   const s = v.sender_address;
